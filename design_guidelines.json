@@ -1,0 +1,92 @@
+{
+  "theme": "Light",
+  "archetype": "1 (Organic & Earthy)",
+  "context": "Admin POS Dashboard for Food Distribution at Construction Sites (FoodPlug)",
+  "colors": {
+    "background": "#F9F8F6",
+    "surface": "#FFFFFF",
+    "primary": "#D95D39",
+    "primary_hover": "#C2502F",
+    "secondary": "#D4A373",
+    "accent": "#8A9A5B",
+    "text_heading": "#2C423F",
+    "text_body": "#5C5C59",
+    "border": "#E8E6E1",
+    "success": "#4F7942",
+    "warning": "#E8A317",
+    "destructive": "#B22222"
+  },
+  "typography": {
+    "fonts_import": "<link href=\"https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@900,800,700,500,400&display=swap\" rel=\"stylesheet\">\n<link href=\"https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">",
+    "heading_font": "'Cabinet Grotesk', sans-serif",
+    "body_font": "'Manrope', sans-serif",
+    "h1": "text-4xl sm:text-5xl tracking-tight text-[#2C423F] font-black font-['Cabinet_Grotesk']",
+    "h2": "text-2xl sm:text-3xl tracking-tight text-[#2C423F] font-bold font-['Cabinet_Grotesk']",
+    "h3": "text-xl sm:text-2xl tracking-tight text-[#2C423F] font-bold font-['Cabinet_Grotesk']",
+    "h4": "text-lg sm:text-xl text-[#2C423F] font-semibold font-['Cabinet_Grotesk']",
+    "body": "text-base text-[#5C5C59] font-medium leading-relaxed font-['Manrope']",
+    "small": "text-sm text-[#5C5C59] font-['Manrope']",
+    "label": "text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold font-['Manrope']"
+  },
+  "spacing_and_layout": {
+    "padding_scale": "p-2, p-4, p-6, p-8, p-12",
+    "border_radius": "rounded-lg",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "card_padding": "p-6",
+    "sidebar_width": "w-64",
+    "alignment": "Optical alignment, left-aligned standard content, top-left priority for main KPIs."
+  },
+  "surface_styles": {
+    "dashboard_cards": "bg-white border border-[#E8E6E1] rounded-lg shadow-[0_2px_10px_rgba(44,66,63,0.04)]",
+    "dashboard_cards_hover": "hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(44,66,63,0.08)] transition-all duration-300",
+    "glass_header": "bg-[#F9F8F6]/80 backdrop-blur-xl border-b border-[#E8E6E1]"
+  },
+  "components": {
+    "buttons": "bg-[#D95D39] text-white rounded-lg px-6 py-3 font-bold hover:bg-[#C2502F] transition-colors shadow-sm",
+    "buttons_secondary": "bg-white border border-[#E8E6E1] text-[#2C423F] rounded-lg px-6 py-3 font-bold hover:bg-[#F9F8F6] transition-colors",
+    "inputs": "bg-white border border-[#E8E6E1] rounded-lg px-4 py-3 text-[#2C423F] focus:outline-none focus:ring-2 focus:ring-[#D95D39]/50",
+    "tables": "w-full text-left border-collapse",
+    "table_th": "text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold pb-4 border-b border-[#E8E6E1]",
+    "table_td": "py-4 border-b border-[#E8E6E1] text-sm text-[#2C423F]",
+    "charts": "Use Recharts (integrated via Shadcn). Use #D95D39 for primary lines/bars, #D4A373 for secondary data points."
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "Clean, stroke-based, consistent sizing (w-5 h-5 for inline, w-8 h-8 for metric cards). Use text-[#D95D39] for primary actions/highlights."
+  },
+  "media_urls": {
+    "logo": {
+      "url": "https://images.unsplash.com/photo-1776694426080-a99de8ae07c0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBhYnN0cmFjdCUyMGZvb2QlMjBsb2dvfGVufDB8fHx8MTc4MzEwODgzNXww&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract food logo to be used as the FoodPlug brand mark in the top-left of the sidebar.",
+      "category": "branding"
+    },
+    "food_plate": {
+      "url": "https://images.unsplash.com/photo-1763048443535-1243379234e2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwxfHxhZnJpY2FuJTIwZm9vZCUyMHBsYXRlfGVufDB8fHx8MTc4MzEwODgzNXww&ixlib=rb-4.1.0&q=85",
+      "description": "African Egusi soup plate. Use this for the 'Sales Agent View' when registering food sales, or as a decorative element for meal items.",
+      "category": "product"
+    },
+    "worker_avatar_1": {
+      "url": "https://images.unsplash.com/photo-1646227655685-a530813759b3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwzfHxjb25zdHJ1Y3Rpb24lMjB3b3JrZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODMxMDg4MzR8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Construction worker with a white hard hat. Use as a placeholder avatar in the Customers list or recent sales table.",
+      "category": "avatar"
+    },
+    "worker_avatar_2": {
+      "url": "https://images.unsplash.com/photo-1672748341520-6a839e6c05bb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwxfHxjb25zdHJ1Y3Rpb24lMjB3b3JrZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODMxMDg4MzR8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Construction worker with a red hard hat. Use as a placeholder avatar for sales reps or specific customers.",
+      "category": "avatar"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Inject the HTML link tags for 'Cabinet Grotesk' and 'Manrope' into the public/index.html file or equivalent entry point.",
+    "Add 'Cabinet Grotesk' and 'Manrope' to your tailwind.config.js font family extensions to use `font-['Cabinet_Grotesk']` and `font-['Manrope']`.",
+    "Build the admin dashboard using a fixed, collapsible left-sidebar layout (a standard SaaS pattern) with the main content area taking the remaining width.",
+    "Implement the 'Control Room' Bento Grid for the dashboard overview. The top-left KPI (Revenue) MUST be visually prioritized.",
+    "Dashboard cards must use pure white backgrounds (`bg-white`), a 1px `#E8E6E1` border, and soft ambient shadows (`shadow-sm` or the specified box-shadow).",
+    "Use Shadcn UI components (Cards, Tables, Dialogs, Selects, Forms) but customize them by overriding default Vercel colors with the defined earthy palette.",
+    "Data Test IDs: Every interactive element (buttons, filters, inputs, navigation links) MUST have a `data-testid` attribute (e.g., `data-testid=\"login-submit-button\"`).",
+    "Currency Display: All monetary values MUST be displayed in Naira (₦).",
+    "Use Shadcn Charts (Recharts) for the Revenue/Sales chart, styled with the primary Terracotta (#D95D39) color line.",
+    "For the Sales Agent view, ensure a clean, distraction-free POS-style interface to quickly search customers (by Name/PIN) and register meals.",
+    "Do NOT use generic placeholders (like via.placeholder.com). Always use the provided media URLs for logos, avatars, and food products."
+  ]
+}
