@@ -148,8 +148,7 @@ function toSessionUser(user: UserDoc): SessionUser {
 }
 
 function hasAuthApi() {
-  if (!USE_AUTH_API) return false;
-  return Boolean(getAuthApiBaseUrl());
+  return false;
 }
 
 function getAuthApiBaseUrl() {
