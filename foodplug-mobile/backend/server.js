@@ -947,16 +947,12 @@ app.delete("/api/agents/:agentId", writeRateLimit, async (req, res) => {
   }
 });
 
-if (require.main === module && process.env.VERCEL !== "1") {
-  const port = Number(process.env.PORT || 4000);
-  (async () => {
-    await ensureSalesSchema();
-    app.listen(port, () => {
-      console.log(`[auth-backend] listening on port ${port}`);
-    });
-  })().catch((error) => {
-    console.error('[auth-backend] failed to start:', error.message);
+const port = Number(process.env.PORT || 4000);
+(async () => {
+  await ensureSalesSchema();
+  app.listen(port, () => {
+    console.log(`[auth-backend] listening on port ${port}`);
   });
-}
-
-module.exports = app;
+})().catch((error) => {
+  console.error('[auth-backend] failed to start:', error.message);
+});
