@@ -1,15 +1,16 @@
 import { Account, Client, Databases, ID, Query, type Models } from "appwrite";
 
-const ENDPOINT = process.env.REACT_APP_APPWRITE_ENDPOINT;
-const PROJECT_ID = process.env.REACT_APP_APPWRITE_PROJECT_ID;
-const DATABASE_ID = process.env.REACT_APP_APPWRITE_DATABASE_ID;
-const ORGANIZATION_ID = process.env.REACT_APP_APPWRITE_ORGANIZATION_ID;
-const AUTH_API_BASE_URL = process.env.REACT_APP_AUTH_API_BASE_URL;
-const USE_AUTH_API = String(process.env.REACT_APP_USE_AUTH_API || "").toLowerCase() === "true";
-const ORGANIZATIONS_COLLECTION_ID = process.env.REACT_APP_APPWRITE_ORGANIZATIONS_COLLECTION_ID || "organizations";
-const USERS_COLLECTION_ID = process.env.REACT_APP_APPWRITE_USERS_COLLECTION_ID || "users";
-const CUSTOMERS_COLLECTION_ID = process.env.REACT_APP_APPWRITE_CUSTOMERS_COLLECTION_ID || "customers";
-const SALES_COLLECTION_ID = process.env.REACT_APP_APPWRITE_SALES_COLLECTION_ID || "sales";
+const ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT;
+const PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID;
+const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
+const ORGANIZATION_ID = import.meta.env.VITE_APPWRITE_ORGANIZATION_ID;
+const AUTH_API_BASE_URL = import.meta.env.VITE_AUTH_API_BASE_URL;
+const USE_AUTH_API = String(import.meta.env.VITE_USE_AUTH_API || "").toLowerCase() === "true";
+const ORGANIZATIONS_COLLECTION_ID = import.meta.env.VITE_APPWRITE_ORGANIZATIONS_COLLECTION_ID || "organizations";
+const USERS_COLLECTION_ID = import.meta.env.VITE_APPWRITE_USERS_COLLECTION_ID || "users";
+const CUSTOMERS_COLLECTION_ID = import.meta.env.VITE_APPWRITE_CUSTOMERS_COLLECTION_ID || "customers";
+const SALES_COLLECTION_ID = import.meta.env.VITE_APPWRITE_SALES_COLLECTION_ID || "sales";
+const PAYMENT_HISTORY_COLLECTION_ID = import.meta.env.VITE_APPWRITE_PAYMENT_HISTORY_COLLECTION_ID || "payment_history";
 
 export const TOKEN_KEY = "foodplug_token";
 export const USER_KEY = "foodplug_user";
@@ -107,7 +108,7 @@ function createApiError(detail: string, status = 400): AppwriteApiError {
 function assertAppwriteBaseConfig() {
   if (!ENDPOINT || !PROJECT_ID || !DATABASE_ID) {
     throw createApiError(
-      "Appwrite is not configured. Set REACT_APP_APPWRITE_ENDPOINT, REACT_APP_APPWRITE_PROJECT_ID, and REACT_APP_APPWRITE_DATABASE_ID.",
+      "Appwrite is not configured. Set VITE_APPWRITE_ENDPOINT, VITE_APPWRITE_PROJECT_ID, and VITE_APPWRITE_DATABASE_ID.",
       500,
     );
   }
@@ -123,7 +124,7 @@ function getTenantOrganizationId() {
   const fromEnv = (ORGANIZATION_ID || "").trim();
   const organizationId = fromSession || fromEnv;
   if (!organizationId) {
-    throw createApiError("Tenant is not configured. Sign in again or set REACT_APP_APPWRITE_ORGANIZATION_ID.", 500);
+    throw createApiError("Tenant is not configured. Sign in again or set VITE_APPWRITE_ORGANIZATION_ID.", 500);
   }
   return organizationId;
 }
@@ -218,6 +219,16 @@ async function deleteAuthApi<T>(path: string) {
   }
 
   return payload;
+}
+
+async function ensureFreshAppwriteSession(email: string, password: string) {
+  try {
+    await account.deleteSession("current");
+  } catch {
+    // Ignore missing or already-cleared sessions.
+  }
+
+  await account.createEmailPasswordSession(email, password);
 }
 
 async function patchAuthApi<T>(path: string, body?: Record<string, unknown>) {
@@ -380,17 +391,17 @@ function normalizeDetail(error: unknown) {
 
   const normalizeAppwriteDetail = (detail: string) => {
     if (detail.includes(projectIdNotFound)) {
-      return "Appwrite project is misconfigured. Update REACT_APP_APPWRITE_PROJECT_ID in frontend/.env with your real Appwrite Project ID, then restart the frontend server.";
+      return "Appwrite project is misconfigured. Update VITE_APPWRITE_PROJECT_ID in frontend/.env with your real Appwrite Project ID, then restart the frontend server.";
     }
 
     if (detail.includes(missingCollectionMatch)) {
       const matchedId = detail.match(/Collection with the requested ID '([^']+)' could not be found/);
       const collectionId = matchedId?.[1];
       const envById: Record<string, string> = {
-        [ORGANIZATIONS_COLLECTION_ID]: "REACT_APP_APPWRITE_ORGANIZATIONS_COLLECTION_ID",
-        [USERS_COLLECTION_ID]: "REACT_APP_APPWRITE_USERS_COLLECTION_ID",
-        [CUSTOMERS_COLLECTION_ID]: "REACT_APP_APPWRITE_CUSTOMERS_COLLECTION_ID",
-        [SALES_COLLECTION_ID]: "REACT_APP_APPWRITE_SALES_COLLECTION_ID",
+        [ORGANIZATIONS_COLLECTION_ID]: "VITE_APPWRITE_ORGANIZATIONS_COLLECTION_ID",
+        [USERS_COLLECTION_ID]: "VITE_APPWRITE_USERS_COLLECTION_ID",
+        [CUSTOMERS_COLLECTION_ID]: "VITE_APPWRITE_CUSTOMERS_COLLECTION_ID",
+        [SALES_COLLECTION_ID]: "VITE_APPWRITE_SALES_COLLECTION_ID",
       };
       const envName = collectionId ? envById[collectionId] : undefined;
       if (envName && collectionId) {
@@ -515,6 +526,24 @@ async function handleGet(path: string, options?: GetOptions) {
       .slice(0, limit);
   }
 
+  if (path === "/payment-history") {
+    const params = options?.params || {};
+    const limit = Number(params.limit || 500);
+    const customerId = (params.customer_id as string | undefined) || "";
+
+    const queries = [
+      Query.equal("organization_id", organizationId),
+      Query.orderDesc("created_at"),
+      Query.limit(limit),
+    ];
+
+    if (customerId) {
+      queries.splice(1, 0, Query.equal("customer_id", customerId));
+    }
+
+    return await listAll<Record<string, unknown>>(PAYMENT_HISTORY_COLLECTION_ID, queries);
+  }
+
   if (path === "/agents") {
     const user = getCurrentUserOrThrow();
     requireAdmin(user);
@@ -529,7 +558,7 @@ async function handleGet(path: string, options?: GetOptions) {
 
   if (path === "/stats") {
     const params = options?.params || {};
-    const period = ((params.period as string) || "day") as "day" | "month" | "all";
+    const period = ((params.period as string) || "day") as "day" | "yesterday" | "month" | "all";
     const month = (params.month as string | undefined) || undefined;
 
     const sales = await listAll<SaleDoc>(SALES_COLLECTION_ID, [Query.equal("organization_id", organizationId)]);
@@ -549,6 +578,12 @@ async function handleGet(path: string, options?: GetOptions) {
       dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
       start = dayStart.toISOString();
       end = dayEnd.toISOString();
+    } else if (period === "yesterday") {
+      const yesterdayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+      const yesterdayEnd = new Date(yesterdayStart);
+      yesterdayEnd.setUTCDate(yesterdayEnd.getUTCDate() + 1);
+      start = yesterdayStart.toISOString();
+      end = yesterdayEnd.toISOString();
     } else if (period === "month") {
       const [y, m] = (month || "").split("-");
       if (!y || !m) {
@@ -709,7 +744,7 @@ async function handlePost(path: string, body?: Record<string, unknown>) {
       throw createApiError("Email and password are required", 400);
     }
 
-    await account.createEmailPasswordSession(email, password);
+    await ensureFreshAppwriteSession(email, password);
 
     const users = await listAll<UserDoc>(USERS_COLLECTION_ID, buildUserLookupQueries(email));
     const user = users[0];
@@ -1003,7 +1038,7 @@ export const api = {
             const email = String(body?.email || "").trim().toLowerCase();
             const password = String(body?.password || "");
             if (email && password) {
-              await account.createEmailPasswordSession(email, password);
+              await ensureFreshAppwriteSession(email, password);
             }
           }
 
@@ -1095,6 +1130,16 @@ export const api = {
         const newCredited = Number(customer.balance_credited || 0) + amount;
         await db.updateDocument(DATABASE_ID as string, CUSTOMERS_COLLECTION_ID, customer.$id, {
           balance_credited: newCredited,
+        });
+        await db.createDocument(DATABASE_ID as string, PAYMENT_HISTORY_COLLECTION_ID, ID.unique(), {
+          organization_id: organizationId,
+          customer_id: customerId,
+          customer_name: customer.name,
+          contractor: customer.contractor,
+          amount,
+          initiated_by: actor.id,
+          initiated_by_name: actor.display_name,
+          created_at: nowIso(),
         });
         return { data: { ok: true, balance_credited: newCredited } as T };
       }

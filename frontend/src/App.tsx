@@ -29,16 +29,33 @@ function ClockGate({ children }: { children: ReactNode }) {
     return <FullScreenNotice title="Checking device time" message="Verifying your clock against the server..." />;
   }
 
-  if (!clockValid) {
-    return (
-      <FullScreenNotice
-        title="Device time is incorrect"
-        message={clockError || "Set date and time to automatic, then reload the app."}
-      />
-    );
-  }
+  return (
+    <>
+      {!clockValid && clockError ? <ClockWarning message={clockError} /> : null}
+      {children}
+    </>
+  );
+}
 
-  return <>{children}</>;
+function ClockWarning({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 50,
+        padding: "12px 16px",
+        background: "#FFF4D8",
+        borderBottom: "1px solid #E7C86B",
+        color: "#6B4F00",
+        textAlign: "center",
+        fontSize: 14,
+        fontWeight: 700,
+      }}
+    >
+      {message}
+    </div>
+  );
 }
 
 function FullScreenNotice({ title, message }: { title: string; message: string }) {

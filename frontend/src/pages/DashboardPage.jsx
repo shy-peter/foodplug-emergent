@@ -147,6 +147,7 @@ export default function DashboardPage() {
       stats?.unique_customers_served ??
       0,
   );
+  const isDashboardLoading = loading || !stats;
   const audienceBreakdown = [
     {
       group: "Customers",
@@ -220,6 +221,7 @@ export default function DashboardPage() {
             <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1">
               {[
                 { id: "day", label: "Today" },
+                { id: "yesterday", label: "Yesterday" },
                 { id: "month", label: "Month" },
                 { id: "all", label: "All time" },
               ].map((p) => (
@@ -260,9 +262,16 @@ export default function DashboardPage() {
           <div className="flex items-center justify-center border  px-6 py-2 rounded-lg border-green-200">
             <div className="text-right border border-green-200 rounded-lg px-4 py-2">
               <p className="text-xs text-[#5C5C59] font-bold">Total collected</p>
-              <p className="font-display font-bold text-lg text-[#2C423F]">
-                {formatNaira((stats?.visitor_revenue || 0) + totalBalance)}
-              </p>
+              {isDashboardLoading ? (
+                <div className="flex items-center justify-end gap-2 py-1 text-[#5C5C59]">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#D95D39]" />
+                  <span className="text-sm font-semibold">Loading...</span>
+                </div>
+              ) : (
+                <p className="font-display font-bold text-lg text-[#2C423F]">
+                  {formatNaira((stats?.visitor_revenue || 0) + totalBalance)}
+                </p>
+              )}
             </div>
           </div>
 
@@ -283,6 +292,7 @@ export default function DashboardPage() {
                     highlight
                     subtitle={`${stats?.total_sales ?? 0} sales`}
                     bgClass={netRevenue < 0 ? "bg-[#F9F1EE]" : ""}
+                    loading={isDashboardLoading}
                   />
                  
                 </>
@@ -297,6 +307,7 @@ export default function DashboardPage() {
               accent="#8A9A5B"
               bgClass="bg-[#F9F1EE]"
               subtitle={`${customerSalesCount} sales`}
+              loading={isDashboardLoading}
             />
 
             <KpiCard
@@ -307,6 +318,7 @@ export default function DashboardPage() {
               accent="#2C423F"
               bgClass="bg-[#E8F5E9]"
               subtitle={`${stats?.visitor_sales_count ?? 0} sales`}
+              loading={isDashboardLoading}
             />
             <KpiCard
               testid="kpi-agents"
@@ -315,6 +327,7 @@ export default function DashboardPage() {
               icon={UserCog}
               accent="#D4A373"
               subtitle="Active team"
+              loading={isDashboardLoading}
             />
           </div>
 
@@ -329,50 +342,59 @@ export default function DashboardPage() {
               Customers and visitors breakdown
             </h3>
 
-            <div className="overflow-x-auto">
-              <table
-                className="w-full text-left border-collapse"
-                data-testid="audience-breakdown-table"
-              >
-                <thead>
-                  <tr>
-                    <Th>Group</Th>
-                    <Th className="text-right">Served</Th>
-                    <Th className="text-right">Sales made</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {audienceBreakdown.map((item) => (
-                    <tr key={item.group}>
-                      <Td className="font-semibold">
-                        <span className="inline-flex items-center gap-2">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full"
-                            style={{ backgroundColor: item.tone }}
-                          />
-                          {item.group}
-                        </span>
+            {isDashboardLoading ? (
+              <div className="flex items-center justify-center min-h-[160px] text-[#5C5C59]">
+                <div className="flex items-center gap-3">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#4F7942]" />
+                  <span className="text-sm font-semibold">Loading audience summary...</span>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table
+                  className="w-full text-left border-collapse"
+                  data-testid="audience-breakdown-table"
+                >
+                  <thead>
+                    <tr>
+                      <Th>Group</Th>
+                      <Th className="text-right">Served</Th>
+                      <Th className="text-right">Sales made</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {audienceBreakdown.map((item) => (
+                      <tr key={item.group}>
+                        <Td className="font-semibold">
+                          <span className="inline-flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full"
+                              style={{ backgroundColor: item.tone }}
+                            />
+                            {item.group}
+                          </span>
+                        </Td>
+                        <Td className="text-right font-display font-bold">
+                          {item.served.toLocaleString("en-NG")}
+                        </Td>
+                        <Td className="text-right font-display font-bold">
+                          {formatNaira(item.salesMade)}
+                        </Td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <Td className="font-semibold">Total</Td>
+                      <Td className="text-right font-display font-black text-[#2C423F]">
+                        {audienceTotals.served.toLocaleString("en-NG")}
                       </Td>
-                      <Td className="text-right font-display font-bold">
-                        {item.served.toLocaleString("en-NG")}
-                      </Td>
-                      <Td className="text-right font-display font-bold">
-                        {formatNaira(item.salesMade)}
+                      <Td className="text-right font-display font-black text-[#2C423F]">
+                        {formatNaira(audienceTotals.salesMade)}
                       </Td>
                     </tr>
-                  ))}
-                  <tr>
-                    <Td className="font-semibold">Total</Td>
-                    <Td className="text-right font-display font-black text-[#2C423F]">
-                      {audienceTotals.served.toLocaleString("en-NG")}
-                    </Td>
-                    <Td className="text-right font-display font-black text-[#2C423F]">
-                      {formatNaira(audienceTotals.salesMade)}
-                    </Td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Chart + Top customers */}
@@ -389,12 +411,26 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-2 text-[#4F7942] text-sm font-semibold">
                   <TrendingUp className="w-4 h-4" />
-                  {chartData.length} days
+                  {isDashboardLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#4F7942]" />
+                      Loading
+                    </span>
+                  ) : (
+                    `${chartData.length} days`
+                  )}
                 </div>
               </div>
 
               <div className="h-64" data-testid="revenue-chart">
-                {chartData.length === 0 && !loading ? (
+                {loading ? (
+                  <div className="h-full flex items-center justify-center text-[#5C5C59]">
+                    <div className="flex items-center gap-3">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#D95D39]" />
+                      <span className="text-sm font-semibold">Loading chart...</span>
+                    </div>
+                  </div>
+                ) : chartData.length === 0 ? (
                   <EmptyChart />
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
@@ -460,7 +496,14 @@ export default function DashboardPage() {
                   Big spenders
                 </h3>
 
-                {stats?.top_customers?.length ? (
+                {isDashboardLoading ? (
+                  <div className="flex items-center justify-center min-h-[120px] text-[#5C5C59]">
+                    <div className="flex items-center gap-3">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#D95D39]" />
+                      <span className="text-sm font-semibold">Loading top customers...</span>
+                    </div>
+                  </div>
+                ) : stats?.top_customers?.length ? (
                   <ul className="space-y-3">
                     {stats.top_customers.map((c, i) => (
                       <li
@@ -510,7 +553,14 @@ export default function DashboardPage() {
                   Registered users vs visitor purchases
                 </h3>
 
-                {userVsVisitorTotal === 0 ? (
+                {isDashboardLoading ? (
+                  <div className="flex items-center justify-center min-h-[160px] text-[#5C5C59]">
+                    <div className="flex items-center gap-3">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#2C423F]" />
+                      <span className="text-sm font-semibold">Loading distribution...</span>
+                    </div>
+                  </div>
+                ) : userVsVisitorTotal === 0 ? (
                   <p className="text-sm text-[#5C5C59] mt-4">
                     No data for this period.
                   </p>
@@ -662,6 +712,7 @@ function KpiCard({
   highlight,
   testid,
   bgClass,
+  loading = false,
 }) {
   const bgColorMap = {
     "bg-[#F9F1EE]": "#FFDAD1",
@@ -684,9 +735,16 @@ function KpiCard({
             </p>
             <p className=" flex self-end font-bold">{usercount}</p>
           </div>
-          <p className="font-display font-black text-3xl text-[#2C423F] mt-3">
-            {value}
-          </p>
+          <div className="mt-3 min-h-[2.5rem] flex items-center">
+            {loading ? (
+              <div className="flex items-center gap-3 text-[#5C5C59]">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E8E6E1] border-t-[#D95D39]" />
+                <span className="text-sm font-semibold">Loading revenue...</span>
+              </div>
+            ) : (
+              <p className="font-display font-black text-3xl text-[#2C423F]">{value}</p>
+            )}
+          </div>
           {subtitle && (
             <p className="text-sm text-[#5C5C59] mt-1">{subtitle}</p>
           )}

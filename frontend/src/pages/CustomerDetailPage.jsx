@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, formatNaira } from "@/lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, User, Building2, Copy } from "lucide-react";
+import { ArrowLeft, User, Building2, Copy, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function CustomerDetailPage() {
@@ -13,6 +13,7 @@ export default function CustomerDetailPage() {
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statsFilter, setStatsFilter] = useState("today");
+  const [activityFilter, setActivityFilter] = useState("both");
   const [selectedDay, setSelectedDay] = useState(() => toLocalDateKey(new Date()));
   const [selectedMonth, setSelectedMonth] = useState(() => toLocalMonthKey(new Date()));
 
@@ -43,24 +44,159 @@ export default function CustomerDetailPage() {
     toast.success(`PIN ${pin} copied`);
   };
 
-  const filteredHistory = useMemo(
-    () => history.filter((sale) => matchesPeriod(sale.created_at, statsFilter, selectedDay, selectedMonth)),
-    [history, selectedDay, selectedMonth, statsFilter],
+  const activityHistory = useMemo(() => {
+    const mealItems = history.map((sale) => ({
+      id: `meal-${sale.id}`,
+      type: "meal",
+      title: "Meal",
+      details: sale.food_type || "Meal",
+      actor: sale.agent_name || "",
+      amount: Number(sale.amount || 0),
+      created_at: sale.created_at,
+    }));
+
+    const paymentItems = paymentHistory.map((payment) => ({
+      id: `payment-${payment.$id}`,
+      type: "payment",
+      title: "Payment",
+      details: `Payment received${payment.initiated_by_name ? ` by ${payment.initiated_by_name}` : ""}`,
+      actor: payment.initiated_by_name || "",
+      amount: Number(payment.amount || 0),
+      created_at: payment.created_at,
+    }));
+
+    const combined = [...mealItems, ...paymentItems].filter((item) => {
+      if (activityFilter === "meal") return item.type === "meal";
+      if (activityFilter === "payment") return item.type === "payment";
+      return true;
+    });
+
+    return combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }, [activityFilter, history, paymentHistory]);
+
+  const exportActivityHistory = () => {
+    if (!activityHistory.length) {
+      toast.error("No history to export");
+      return;
+    }
+
+    const rows = [...activityHistory].map((item) => ({
+      type: item.type,
+      foodTypeDetails: item.details,
+      agentAdmin: item.actor || "",
+      amount: formatNaira(item.amount),
+      date: new Date(item.created_at).toLocaleString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+    }));
+
+    const escapeHtml = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;");
+
+    const tableRows = rows
+      .map(
+        (row) => `
+          <tr>
+            <td>${escapeHtml(row.type)}</td>
+            <td>${escapeHtml(row.foodTypeDetails)}</td>
+            <td>${escapeHtml(row.agentAdmin)}</td>
+            <td style="text-align:right;">${escapeHtml(row.amount)}</td>
+            <td style="text-align:right;">${escapeHtml(row.date)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    const html = `
+      <!doctype html>
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+        <head>
+          <meta charset="utf-8" />
+          <!--[if gte mso 9]><xml>
+            <x:ExcelWorkbook>
+              <x:ExcelWorksheets>
+                <x:ExcelWorksheet>
+                  <x:Name>History</x:Name>
+                  <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+                </x:ExcelWorksheet>
+              </x:ExcelWorksheets>
+            </x:ExcelWorkbook>
+          </xml><![endif]-->
+          <style>
+            body { font-family: Arial, sans-serif; color: #1f2937; }
+            h1 { margin: 0 0 6px; font-size: 18px; }
+            p { margin: 0 0 12px; color: #4b5563; }
+            table { border-collapse: collapse; width: 100%; font-size: 12px; }
+            th, td { border: 1px solid #d1d5db; padding: 8px; }
+            th { background: #f3f4f6; text-align: left; }
+          </style>
+        </head>
+        <body>
+          <h1>${escapeHtml(customer.name)} - Activity History</h1>
+          <p>Contractor: ${escapeHtml(customer.contractor)} | PIN: ${escapeHtml(customer.pin)} | Exported: ${new Date().toLocaleString("en-GB")}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>FoodType/Details</th>
+                <th>Agent/Admin</th>
+                <th style="text-align:right;">Amount</th>
+                <th style="text-align:right;">Date & Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob(["\ufeff", html], {
+      type: "application/vnd.ms-excel;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `history-${customer.pin}-${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success("History downloaded");
+  };
+
+  const filteredActivityHistory = useMemo(
+    () => activityHistory.filter((item) => matchesPeriod(item.created_at, statsFilter, selectedDay, selectedMonth)),
+    [activityHistory, selectedDay, selectedMonth, statsFilter],
   );
 
-  const filteredPaymentHistory = useMemo(
-    () => paymentHistory.filter((payment) => matchesPeriod(payment.created_at, statsFilter, selectedDay, selectedMonth)),
-    [paymentHistory, selectedDay, selectedMonth, statsFilter],
-  );
+  const mealCount = history.length;
+  const paymentCount = paymentHistory.length;
 
-  const totalSpent = filteredHistory.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0);
-  const paid = filteredPaymentHistory.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const exportLabel = activityFilter === "meal" ? "Meal Excel" : activityFilter === "payment" ? "Payment Excel" : "Excel";
+
+  const activityTypeLabel = activityFilter === "meal" ? "Meal History" : activityFilter === "payment" ? "Payment History" : "Activity History";
+  const totalSpent = history.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0);
+  const paid = paymentHistory.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const outstanding = Math.max(0, totalSpent - paid);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <p className="text-[#5C5C59]">Loading...</p>
+      <div className="flex items-center justify-center min-h-[320px] rounded-2xl border border-[#E8E6E1] bg-white/70">
+        <div className="flex flex-col items-center gap-3 text-[#5C5C59]">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#E8E6E1] border-t-[#D95D39]" />
+          <p className="text-sm font-medium">Loading customer profile...</p>
+        </div>
       </div>
     );
   }
@@ -169,7 +305,9 @@ export default function CustomerDetailPage() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Meals</p>
-            <p className="text-2xl font-display font-bold text-[#2C423F] mt-1">{filteredHistory.length}</p>
+            <p className="text-2xl font-display font-bold text-[#2C423F] mt-1">
+              {filteredActivityHistory.filter((item) => item.type === "meal").length}
+            </p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Spent</p>
@@ -204,83 +342,97 @@ export default function CustomerDetailPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Transaction</p>
-            <h2 className="font-display font-bold text-xl text-[#2C423F] mt-1">Meal History</h2>
+            <h2 className="font-display font-bold text-xl text-[#2C423F] mt-1">{activityTypeLabel}</h2>
           </div>
-          <div className="text-right">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Records</p>
-            <p className="text-2xl font-display font-bold text-[#2C423F]">{filteredHistory.length}</p>
+          <div className="text-right flex flex-col items-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={exportActivityHistory}
+              className="border-[#D95D39]/30 text-[#D95D39] hover:bg-[#D95D39]/5"
+            >
+              <Download className="w-4 h-4 mr-2" /> Download {exportLabel}
+            </Button>
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Records</p>
+              <p className="text-2xl font-display font-bold text-[#2C423F]">{filteredActivityHistory.length}</p>
+            </div>
           </div>
         </div>
 
-        {filteredHistory.length === 0 ? (
-          <p className="text-center py-10 text-[#5C5C59]">No meals recorded yet.</p>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <button
+            onClick={() => setActivityFilter("meal")}
+            className={`px-3 py-1.5 rounded-full text-sm font-semibold border ${
+              activityFilter === "meal"
+                ? "bg-[#4F7942] text-white border-[#4F7942]"
+                : "bg-white text-[#2C423F] border-[#E8E6E1]"
+            }`}
+          >
+            Meal History
+          </button>
+          <button
+            onClick={() => setActivityFilter("payment")}
+            className={`px-3 py-1.5 rounded-full text-sm font-semibold border ${
+              activityFilter === "payment"
+                ? "bg-[#D95D39] text-white border-[#D95D39]"
+                : "bg-white text-[#2C423F] border-[#E8E6E1]"
+            }`}
+          >
+            Payment History
+          </button>
+          <button
+            onClick={() => setActivityFilter("both")}
+            className={`px-3 py-1.5 rounded-full text-sm font-semibold border ${
+              activityFilter === "both"
+                ? "bg-[#2C423F] text-white border-[#2C423F]"
+                : "bg-white text-[#2C423F] border-[#E8E6E1]"
+            }`}
+          >
+            Both
+          </button>
+        </div>
+
+        {filteredActivityHistory.length === 0 ? (
+          <p className="text-center py-10 text-[#5C5C59]">No history recorded yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr>
-                  <Th>Agent</Th>
-                  <Th>Food Type</Th>
+                  <Th>Type</Th>
+                  <Th>FoodType/Details</Th>
+                  <Th>Agent/Admin</Th>
                   <Th className="text-right">Amount</Th>
                   <Th className="text-right">Date & Time</Th>
                 </tr>
               </thead>
               <tbody>
-                {filteredHistory.map((sale) => (
-                  <tr key={sale.id} className="hover:bg-[#F9F8F6] transition-colors">
-                    <Td className="font-semibold">{sale.agent_name}</Td>
-                    <Td>{sale.food_type}</Td>
-                    <Td className={`text-right font-display font-bold ${Number(sale.amount) < 0 ? "text-[#D95D39]" : "text-[#4F7942]"}`}>{formatNaira(sale.amount)}</Td>
-                    <Td className="text-right text-[#5C5C59]">
-                      {new Date(sale.created_at).toLocaleString("en-GB", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                {filteredActivityHistory.map((item) => (
+                  <tr
+                    key={item.id}
+                    className={`transition-colors ${
+                      item.type === "meal" ? "bg-[#FFF1F0] hover:bg-[#FFE6E3]" : "bg-[#F1FBF3] hover:bg-[#E8F8EB]"
+                    }`}
+                  >
+                    <Td className="bg-transparent">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-[0.15em] ${
+                          item.type === "meal"
+                            ? "bg-[#E8F5E9] text-[#4F7942]"
+                            : "bg-[#F9F1EE] text-[#D95D39]"
+                        }`}
+                      >
+                        {item.type}
+                      </span>
                     </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Payment History */}
-      <div className="card-elevated p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Transaction</p>
-            <h2 className="font-display font-bold text-xl text-[#2C423F] mt-1">Payment History</h2>
-          </div>
-          <div className="text-right">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Records</p>
-            <p className="text-2xl font-display font-bold text-[#2C423F]">{filteredPaymentHistory.length}</p>
-          </div>
-        </div>
-
-        {filteredPaymentHistory.length === 0 ? (
-          <p className="text-center py-10 text-[#5C5C59]">No payments recorded yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr>
-                  <Th>Amount Paid</Th>
-                  <Th>Initiated By</Th>
-                  <Th className="text-right">Date & Time</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPaymentHistory.map((payment) => (
-                  <tr key={payment.$id} className="hover:bg-[#F9F8F6] transition-colors">
-                    <Td className="font-display font-bold text-[#4F7942]">{formatNaira(payment.amount)}</Td>
-                    <Td className="font-semibold">{payment.initiated_by_name}</Td>
+                    <Td className="font-semibold bg-transparent">{item.details}</Td>
+                    <Td className="bg-transparent">{item.actor || "-"}</Td>
+                    <Td className={`text-right font-display font-bold ${item.type === "meal" ? "text-[#D95D39]" : "text-[#4F7942]"}`}>
+                      {formatNaira(item.amount)}
+                    </Td>
                     <Td className="text-right text-[#5C5C59]">
-                      {new Date(payment.created_at).toLocaleString("en-GB", {
+                      {new Date(item.created_at).toLocaleString("en-GB", {
                         hour: "2-digit",
                         minute: "2-digit",
                         hour12: true,

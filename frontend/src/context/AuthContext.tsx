@@ -116,10 +116,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    if (!clockValid) {
-      throw new Error(clockError || "Device time is incorrect. Set date and time to automatic and try again.");
-    }
-
     setLoading(true);
     try {
       const res = await api.post<{ token: string; user: SessionUser }>("/auth/login", { email, password });
