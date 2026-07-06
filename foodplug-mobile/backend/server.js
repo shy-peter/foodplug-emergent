@@ -9,8 +9,24 @@ const { Client, Databases, ID, Query, Users } = require("node-appwrite");
 const app = express();
 app.use(express.json({ limit: "100kb" }));
 
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
-app.use(cors({ origin: FRONTEND_ORIGIN }));
+const configuredOrigins = String(process.env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const defaultOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+const allowedOrigins = new Set([...(configuredOrigins.length ? configuredOrigins : defaultOrigins), ...defaultOrigins]);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow non-browser and same-origin server-to-server requests.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      if (process.env.NODE_ENV !== "production") return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
+  }),
+);
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");

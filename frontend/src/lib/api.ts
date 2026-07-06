@@ -5,6 +5,7 @@ const PROJECT_ID = process.env.REACT_APP_APPWRITE_PROJECT_ID;
 const DATABASE_ID = process.env.REACT_APP_APPWRITE_DATABASE_ID;
 const ORGANIZATION_ID = process.env.REACT_APP_APPWRITE_ORGANIZATION_ID;
 const AUTH_API_BASE_URL = process.env.REACT_APP_AUTH_API_BASE_URL;
+const USE_AUTH_API = String(process.env.REACT_APP_USE_AUTH_API || "").toLowerCase() === "true";
 const ORGANIZATIONS_COLLECTION_ID = process.env.REACT_APP_APPWRITE_ORGANIZATIONS_COLLECTION_ID || "organizations";
 const USERS_COLLECTION_ID = process.env.REACT_APP_APPWRITE_USERS_COLLECTION_ID || "users";
 const CUSTOMERS_COLLECTION_ID = process.env.REACT_APP_APPWRITE_CUSTOMERS_COLLECTION_ID || "customers";
@@ -146,6 +147,7 @@ function toSessionUser(user: UserDoc): SessionUser {
 }
 
 function hasAuthApi() {
+  if (!USE_AUTH_API) return false;
   return Boolean(getAuthApiBaseUrl());
 }
 
@@ -154,10 +156,26 @@ function getAuthApiBaseUrl() {
   if (configured) return configured;
 
   if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
+    const hostname = window.location.hostname;
+    const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
+    if (isLocalHost) {
+      return `${window.location.protocol}//${hostname}:4000`;
+    }
   }
 
-  return "http://localhost:4000";
+  return "";
+}
+
+function isNetworkFetchError(error: unknown) {
+  if (error instanceof TypeError) return true;
+  const message = typeof error === "object" && error && "message" in error ? String((error as { message?: string }).message || "") : "";
+  const lowered = message.toLowerCase();
+  return (
+    lowered.includes("failed to fetch")
+    || lowered.includes("networkerror")
+    || lowered.includes("load failed")
+    || lowered.includes("network request failed")
+  );
 }
 
 function authApiUrl(path: string) {
@@ -419,6 +437,17 @@ function normalizeDetail(error: unknown) {
 }
 
 async function handleGet(path: string, options?: GetOptions) {
+  if (path === "/health") {
+    // Appwrite-native mode has no custom backend health endpoint.
+    return {
+      status: "ok",
+      server_time: nowIso(),
+      server_time_ms: Date.now(),
+      max_clock_skew_ms: 5 * 60 * 1000,
+      source: "appwrite-native",
+    };
+  }
+
   const organizationId = getTenantOrganizationId();
 
   if (path === "/") {
@@ -947,6 +976,12 @@ export const api = {
         }
       }
 
+      if (path === "/health") {
+        assertAppwriteBaseConfig();
+        const data = await handleGet(path, options);
+        return { data: data as T };
+      }
+
       assertTenantConfig();
       const data = await handleGet(path, options);
       return { data: data as T };
@@ -959,19 +994,26 @@ export const api = {
     try {
       if (hasAuthApi() && (path === "/organizations/register" || path === "/auth/login")) {
         const authPath = path === "/organizations/register" ? "/api/auth/register-organization" : "/api/auth/login";
-        const data = await postAuthApi<T>(authPath, body);
+        try {
+          const data = await postAuthApi<T>(authPath, body);
 
-        // When login is handled by backend, establish a browser Appwrite session
-        // so subsequent frontend Appwrite DB calls are authorized.
-        if (path === "/auth/login") {
-          const email = String(body?.email || "").trim().toLowerCase();
-          const password = String(body?.password || "");
-          if (email && password) {
-            await account.createEmailPasswordSession(email, password);
+          // When login is handled by backend, establish a browser Appwrite session
+          // so subsequent frontend Appwrite DB calls are authorized.
+          if (path === "/auth/login") {
+            const email = String(body?.email || "").trim().toLowerCase();
+            const password = String(body?.password || "");
+            if (email && password) {
+              await account.createEmailPasswordSession(email, password);
+            }
+          }
+
+          return { data };
+        } catch (authApiError) {
+          // If backend is unreachable, fall back to direct Appwrite path.
+          if (!isNetworkFetchError(authApiError)) {
+            throw authApiError;
           }
         }
-
-        return { data };
       }
 
       if (hasAuthApi() && (path === "/customers" || path === "/agents")) {

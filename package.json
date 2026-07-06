@@ -5,9 +5,10 @@
     "concurrently": "^9.2.1"
   },
   "scripts": {
-    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev": "npm --prefix frontend run dev",
+    "dev:full": "concurrently \"npm --prefix foodplug-mobile/backend run dev\" \"npm --prefix frontend run dev\"",
     "dev:frontend": "npm --prefix frontend run dev",
-    "dev:backend": "npm --prefix backend run dev",
+    "dev:backend": "npm --prefix foodplug-mobile/backend run dev",
     "start": "npm --prefix frontend run start",
     "postinstall": "npm --prefix frontend install --legacy-peer-deps --no-audit --no-fund",
     "build": "npm --prefix frontend run build",

@@ -21,14 +21,25 @@ type HealthResponse = {
 
 const CLOCK_CHECK_TIMEOUT_MS = 10000;
 const DEFAULT_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const CLOCK_SAFETY_MARGIN_MS = 15 * 1000;
 
 async function validateDeviceClock() {
-  const healthResponse = await Promise.race([
-    api.get<HealthResponse>("/health"),
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Device clock check timed out. Check backend connectivity.")), CLOCK_CHECK_TIMEOUT_MS);
-    }),
-  ]);
+  const requestStartedAt = Date.now();
+
+  let healthResponse;
+  try {
+    healthResponse = await Promise.race([
+      api.get<HealthResponse>("/health"),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Device clock check timed out. Check backend connectivity.")), CLOCK_CHECK_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    // Do not block app usage when clock verification is unavailable.
+    return;
+  }
+
+  const responseReceivedAt = Date.now();
 
   const payload = healthResponse.data;
   const serverTimeMs =
@@ -36,11 +47,16 @@ async function validateDeviceClock() {
   const maxSkewMs = typeof payload.max_clock_skew_ms === "number" ? payload.max_clock_skew_ms : DEFAULT_CLOCK_SKEW_MS;
 
   if (!Number.isFinite(serverTimeMs)) {
-    throw new Error("Unable to verify device time.");
+    return;
   }
 
-  const skew = Math.abs(Date.now() - serverTimeMs);
-  if (skew > maxSkewMs) {
+  // Use midpoint time to reduce false positives caused by request/response latency.
+  const estimatedClientNow = Math.round((requestStartedAt + responseReceivedAt) / 2);
+  const roundTripMs = Math.max(0, responseReceivedAt - requestStartedAt);
+  const allowedSkewMs = Math.max(maxSkewMs, DEFAULT_CLOCK_SKEW_MS) + roundTripMs + CLOCK_SAFETY_MARGIN_MS;
+
+  const skew = Math.abs(estimatedClientNow - serverTimeMs);
+  if (skew > allowedSkewMs) {
     throw new Error("Device time is incorrect. Set date and time to automatic and try again.");
   }
 }

@@ -12,10 +12,13 @@ This backend handles production-safe authentication flows that should not run di
 
 1. Copy `.env.example` to `.env` in this folder.
 2. Set Appwrite variables, especially `APPWRITE_API_KEY`.
-3. Install deps from repo root and backend:
+3. Set `FRONTEND_ORIGIN` to your frontend URL.
+   - Multiple origins are supported as comma-separated values.
+   - Example: `FRONTEND_ORIGIN=http://localhost:3000,https://your-app.vercel.app`
+4. Install deps from repo root and backend:
    - `npm install`
-   - `npm --prefix backend install`
-4. Start both frontend and backend from root:
+   - `npm --prefix foodplug-mobile/backend install`
+5. Start both frontend and backend from root:
    - `npm run dev`
 
 ## Security note
