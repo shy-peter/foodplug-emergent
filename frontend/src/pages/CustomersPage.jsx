@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, formatNaira } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Trash2, Copy, User } from "lucide-react";
+import { Search, Plus, Copy, User } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -16,9 +17,11 @@ import {
 } from "@/components/ui/dialog";
 
 export default function CustomersPage() {
+    const navigate = useNavigate();
     const [customers, setCustomers] = useState([]);
     const [salesByCustomer, setSalesByCustomer] = useState({});
     const [q, setQ] = useState("");
+    const [balanceFilter, setBalanceFilter] = useState("all");
     const [open, setOpen] = useState(false);
     const [name, setName] = useState("");
     const [contractor, setContractor] = useState("");
@@ -34,7 +37,7 @@ export default function CustomersPage() {
                 if (!sale.customer_id) continue;
                 if (!map[sale.customer_id]) map[sale.customer_id] = { meals: 0, revenue: 0 };
                 map[sale.customer_id].meals += 1;
-                map[sale.customer_id].revenue += sale.amount;
+                map[sale.customer_id].revenue += Math.abs(Number(sale.amount || 0));
             }
             setSalesByCustomer(map);
         } catch (e) {
@@ -48,14 +51,21 @@ export default function CustomersPage() {
 
     const filtered = useMemo(() => {
         const query = q.trim().toLowerCase();
-        if (!query) return customers;
-        return customers.filter(
-            (c) =>
+        return customers.filter((c) => {
+            if (query && !(
                 c.name.toLowerCase().includes(query) ||
                 c.contractor.toLowerCase().includes(query) ||
-                c.pin.includes(query),
-        );
-    }, [customers, q]);
+                c.pin.includes(query)
+            )) return false;
+            if (balanceFilter !== "all") {
+                const s = salesByCustomer[c.id] || { revenue: 0 };
+                const outstanding = Math.max(0, s.revenue - (Number(c.balance_credited) || 0));
+                if (balanceFilter === "owing" && outstanding === 0) return false;
+                if (balanceFilter === "cleared" && outstanding > 0) return false;
+            }
+            return true;
+        });
+    }, [customers, q, balanceFilter, salesByCustomer]);
 
     const handleCreate = async (e) => {
         e.preventDefault();
@@ -75,17 +85,6 @@ export default function CustomersPage() {
             toast.error(err?.response?.data?.detail || "Failed to create customer");
         } finally {
             setCreating(false);
-        }
-    };
-
-    const handleDelete = async (id) => {
-        if (!window.confirm("Delete this customer? This cannot be undone.")) return;
-        try {
-            await api.delete(`/customers/${id}`);
-            setCustomers((prev) => prev.filter((c) => c.id !== id));
-            toast.success("Customer deleted");
-        } catch (err) {
-            toast.error(err?.response?.data?.detail || "Failed to delete");
         }
     };
 
@@ -176,15 +175,40 @@ export default function CustomersPage() {
             </div>
 
             <div className="card-elevated p-4 md:p-6">
-                <div className="relative mb-4">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5C5C59]" />
-                    <Input
-                        data-testid="customer-search-input"
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                        placeholder="Search by name, contractor, or PIN"
-                        className="pl-9 h-11 bg-white border-[#E8E6E1]"
-                    />
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5C5C59]" />
+                        <Input
+                            data-testid="customer-search-input"
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                            placeholder="Search by name, contractor, or PIN"
+                            className="pl-9 h-11 bg-white border-[#E8E6E1]"
+                        />
+                    </div>
+                    <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1 shrink-0">
+                        {[
+                            { id: "all", label: "All" },
+                            { id: "owing", label: "Owing" },
+                            { id: "cleared", label: "Cleared" },
+                        ].map((f) => (
+                            <button
+                                key={f.id}
+                                onClick={() => setBalanceFilter(f.id)}
+                                className={`px-3 py-1.5 rounded-md text-sm font-bold transition-colors ${
+                                    balanceFilter === f.id
+                                        ? f.id === "owing"
+                                            ? "bg-[#D95D39] text-white"
+                                            : f.id === "cleared"
+                                            ? "bg-[#4F7942] text-white"
+                                            : "bg-[#2C423F] text-white"
+                                        : "text-[#5C5C59] hover:text-[#2C423F]"
+                                }`}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -195,15 +219,21 @@ export default function CustomersPage() {
                                 <Th>Contractor</Th>
                                 <Th>PIN</Th>
                                 <Th className="text-right">Meals</Th>
-                                <Th className="text-right">Spent</Th>
-                                <Th></Th>
+                                <Th className="text-right">Balance</Th>
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.map((c) => {
                                 const s = salesByCustomer[c.id] || { meals: 0, revenue: 0 };
+                                const paid = Number(c.balance_credited) || 0;
+                                const outstanding = Math.max(0, s.revenue - paid);
                                 return (
-                                    <tr key={c.id} className="hover:bg-[#F9F8F6]" data-testid={`customer-row-${c.id}`}>
+                                    <tr
+                                        key={c.id}
+                                        onClick={() => navigate(`/admin/customers/${c.id}`)}
+                                        className="hover:bg-[#F9F8F6] cursor-pointer transition-colors"
+                                        data-testid={`customer-row-${c.id}`}
+                                    >
                                         <Td>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-9 h-9 rounded-full bg-[#F9F1EE] text-[#D95D39] flex items-center justify-center">
@@ -215,7 +245,10 @@ export default function CustomersPage() {
                                         <Td>{c.contractor}</Td>
                                         <Td>
                                             <button
-                                                onClick={() => copyPin(c.pin)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    copyPin(c.pin);
+                                                }}
                                                 className="font-mono font-bold text-[#D95D39] hover:underline"
                                                 data-testid={`copy-pin-${c.pin}`}
                                             >
@@ -223,22 +256,17 @@ export default function CustomersPage() {
                                             </button>
                                         </Td>
                                         <Td className="text-right">{s.meals}</Td>
-                                        <Td className="text-right font-display font-bold">{formatNaira(s.revenue)}</Td>
-                                        <Td className="text-right">
-                                            <button
-                                                onClick={() => handleDelete(c.id)}
-                                                data-testid={`delete-customer-${c.id}`}
-                                                className="text-[#B22222] hover:bg-[#B22222]/10 p-2 rounded-md transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                        <Td className="text-right font-display font-bold">
+                                            <span className={outstanding > 0 ? "text-[#D95D39]" : "text-[#4F7942]"}>
+                                                {formatNaira(outstanding)}
+                                            </span>
                                         </Td>
                                     </tr>
                                 );
                             })}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="text-center py-10 text-[#5C5C59]">
+                                    <td colSpan={5} className="text-center py-10 text-[#5C5C59]">
                                         No customers match your search.
                                     </td>
                                 </tr>

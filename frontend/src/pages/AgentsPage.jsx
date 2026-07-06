@@ -18,8 +18,9 @@ import {
 export default function AgentsPage() {
     const [agents, setAgents] = useState([]);
     const [open, setOpen] = useState(false);
-    const [form, setForm] = useState({ display_name: "", email: "", contact: "", password: "" });
+    const [form, setForm] = useState({ display_name: "", email: "", contact: "", password: "", confirm_password: "" });
     const [creating, setCreating] = useState(false);
+    const passwordMismatch = Boolean(form.confirm_password) && form.password !== form.confirm_password;
 
     const fetchAgents = async () => {
         try {
@@ -44,11 +45,17 @@ export default function AgentsPage() {
             toast.error("Password must be at least 6 characters");
             return;
         }
+
+        if (form.password !== form.confirm_password) {
+            return;
+        }
+
+        const { confirm_password, ...payload } = form;
         setCreating(true);
         try {
-            const res = await api.post("/agents", form);
+            const res = await api.post("/agents", payload);
             setAgents((prev) => [res.data, ...prev]);
-            setForm({ display_name: "", email: "", contact: "", password: "" });
+            setForm({ display_name: "", email: "", contact: "", password: "", confirm_password: "" });
             setOpen(false);
             toast.success(`Registered ${res.data.display_name}`);
         } catch (err) {
@@ -141,6 +148,18 @@ export default function AgentsPage() {
                                     placeholder="At least 6 characters"
                                     required
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Confirm password</Label>
+                                <Input
+                                    type="password"
+                                    data-testid="agent-confirm-password-input"
+                                    value={form.confirm_password}
+                                    onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
+                                    placeholder="Re-enter password"
+                                    required
+                                />
+                                {passwordMismatch && <p className="text-xs text-[#B22222]">Password does not match</p>}
                             </div>
                             <DialogFooter>
                                 <Button

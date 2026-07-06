@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,16 +136,15 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    <div className="mt-8 rounded-lg border border-[#E8E6E1] bg-white p-4 space-y-2">
-                        <div className="flex items-center gap-2 text-[#4F7942] text-xs font-bold uppercase tracking-widest">
-                            <ShieldCheck className="w-4 h-4" /> Demo credentials
-                        </div>
-                        <p className="text-sm text-[#2C423F]">
-                            <span className="font-semibold">Admin:</span> admin@foodplug.com / admin123
-                        </p>
-                        <p className="text-sm text-[#2C423F]">
-                            <span className="font-semibold">Sales:</span> sales@foodplug.com / sales123
-                        </p>
+                    
+
+                    <div className="mt-4 text-center">
+                        <Link
+                            to="/register-organization"
+                            className="text-sm font-semibold text-[#2C423F] hover:text-[#D95D39]"
+                        >
+                            New organization? Register here
+                        </Link>
                     </div>
                 </div>
             </div>
