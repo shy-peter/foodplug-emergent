@@ -42,11 +42,20 @@ To learn more about developing your project with Expo, look at the following res
 - [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
 - [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
-## FoodPlug login setup
+## FoodPlug Appwrite setup
 
-The mobile app signs in against the FoodPlug auth backend at `POST /api/auth/login` and stores the returned session securely on the device.
+The mobile app signs in and reads/writes data directly in Appwrite (no Express backend).
 
-Set `EXPO_PUBLIC_AUTH_API_BASE_URL` before starting the app. For local development this is usually `http://localhost:4000` on web or the iOS simulator, and `http://10.0.2.2:4000` on the Android emulator.
+Set these environment variables before starting the app:
+
+- `EXPO_PUBLIC_APPWRITE_ENDPOINT`
+- `EXPO_PUBLIC_APPWRITE_PROJECT_ID`
+- `EXPO_PUBLIC_APPWRITE_DATABASE_ID`
+- `EXPO_PUBLIC_APPWRITE_ORGANIZATION_ID` (optional, recommended for multi-tenant safety)
+- `EXPO_PUBLIC_APPWRITE_ORGANIZATIONS_COLLECTION_ID` (optional, default `organizations`)
+- `EXPO_PUBLIC_APPWRITE_USERS_COLLECTION_ID` (optional, default `users`)
+- `EXPO_PUBLIC_APPWRITE_CUSTOMERS_COLLECTION_ID` (optional, default `customers`)
+- `EXPO_PUBLIC_APPWRITE_SALES_COLLECTION_ID` (optional, default `sales`)
 
 Demo credentials from the web app also work in mobile:
 

@@ -1,4 +1,16 @@
-import { getAuthApiBaseUrls, type SessionUser } from '@/lib/auth';
+import { Query } from 'appwrite';
+
+import {
+  CUSTOMERS_COLLECTION_ID,
+  SALES_COLLECTION_ID,
+  USERS_COLLECTION_ID,
+  createApiError,
+  listAll,
+  type CustomerDoc,
+  type SaleDoc,
+  type UserDoc,
+} from '@/lib/appwrite';
+import { type SessionUser } from '@/lib/auth';
 
 export type DashboardPeriod = 'day' | 'month' | 'all';
 
@@ -48,60 +60,20 @@ export type DashboardOverviewFallback = {
   recentSales: SaleRecord[];
 };
 
-function formatQuery(params: Record<string, string | undefined>) {
-  const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (!value) continue;
-    searchParams.set(key, value);
-  }
-  const query = searchParams.toString();
-  return query ? `?${query}` : '';
-}
-
-const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
-
-async function requestJson<T>(path: string, token: string) {
-  let lastError: Error | null = null;
-
-  for (const baseUrl of getAuthApiBaseUrls()) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), DASHBOARD_REQUEST_TIMEOUT_MS);
-
-      let response: Response;
-      try {
-        response = await fetch(`${baseUrl}${path}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      const payload = (await response.json().catch(() => ({}))) as T & { detail?: string };
-      if (!response.ok) {
-        const message = payload.detail || 'Unable to load dashboard';
-        if (response.status === 404 || response.status >= 500) {
-          lastError = new Error(message);
-          continue;
-        }
-        throw new Error(message);
-      }
-
-      return payload;
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        lastError = new Error(`Dashboard request timed out for ${baseUrl}. Check backend connectivity.`);
-      } else {
-        lastError = error instanceof Error ? error : new Error('Unable to load dashboard');
-      }
-    }
-  }
-
-  throw lastError || new Error('Unable to load dashboard');
+function toSaleRecord(sale: SaleDoc): SaleRecord {
+  return {
+    id: sale.id,
+    organization_id: sale.organization_id,
+    type: sale.type,
+    customer_id: sale.customer_id || null,
+    customer_name: sale.customer_name,
+    contractor: sale.contractor,
+    food_type: sale.food_type,
+    amount: Number(sale.amount || 0),
+    agent_id: sale.agent_id,
+    agent_name: sale.agent_name,
+    created_at: sale.created_at,
+  };
 }
 
 function createEmptyStats(period: DashboardPeriod): DashboardStats {
@@ -133,6 +105,19 @@ function isSameUtcDay(leftIso: string, rightIso: string) {
 
 function isSameMonth(iso: string, monthKey: string) {
   return iso.slice(0, 7) === monthKey;
+}
+
+function isInPeriod(iso: string, period: DashboardPeriod) {
+  if (period === 'all') {
+    return true;
+  }
+
+  const nowIso = new Date().toISOString();
+  if (period === 'day') {
+    return isSameUtcDay(iso, nowIso);
+  }
+
+  return isSameMonth(iso, getCurrentMonthKey());
 }
 
 function filterSalesByPeriod(sales: SaleRecord[], period: DashboardPeriod) {
@@ -215,22 +200,51 @@ function deriveStatsFromSales(period: DashboardPeriod, sales: SaleRecord[]): Das
 }
 
 export async function loadDashboardOverview(token: string, user: SessionUser, period: DashboardPeriod = 'day') {
-  const salesPromise = requestJson<SaleRecord[]>(`/api/sales${formatQuery({ limit: '100' })}`, token);
+  void token;
 
-  if (user.role === 'admin') {
-    const statsPromise = requestJson<DashboardStats>(
-      `/api/stats${formatQuery({ period, month: period === 'month' ? getCurrentMonthKey() : undefined })}`,
-      token,
-    );
-    const [stats, recentSales] = await Promise.all([statsPromise, salesPromise]);
-    return { period, stats, recentSales } satisfies DashboardOverview;
+  if (!user.organization_id) {
+    throw createApiError('Tenant is not configured. Sign in again.', 500);
   }
 
-  const recentSales = await salesPromise;
+  const [salesDocs, customerDocs, agentDocs] = await Promise.all([
+    listAll<SaleDoc>(SALES_COLLECTION_ID, [
+      Query.equal('organization_id', user.organization_id),
+      Query.orderDesc('created_at'),
+      Query.limit(100),
+    ]),
+    listAll<CustomerDoc>(CUSTOMERS_COLLECTION_ID, [Query.equal('organization_id', user.organization_id)]),
+    listAll<UserDoc>(USERS_COLLECTION_ID, [
+      Query.equal('organization_id', user.organization_id),
+      Query.equal('role', 'sales'),
+    ]),
+  ]);
+
+  const recentSales = salesDocs.map(toSaleRecord);
+  const periodScopedSales = recentSales.filter((sale) => isInPeriod(sale.created_at, period));
+
+  const baseStats = deriveStatsFromSales(period, periodScopedSales);
+  const stats: DashboardStats = {
+    ...baseStats,
+    total_customers: customerDocs.length,
+    total_agents: agentDocs.length,
+  };
+
+  if (user.role === 'admin') {
+    return {
+      period,
+      stats,
+      recentSales,
+    } satisfies DashboardOverview;
+  }
+
   const filteredSales = filterSalesByPeriod(recentSales, period);
   return {
     period,
-    stats: deriveStatsFromSales(period, filteredSales.length > 0 ? filteredSales : []),
+    stats: {
+      ...deriveStatsFromSales(period, filteredSales.length > 0 ? filteredSales : []),
+      total_customers: customerDocs.length,
+      total_agents: agentDocs.length,
+    },
     recentSales,
   } satisfies DashboardOverviewFallback;
 }

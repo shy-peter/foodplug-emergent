@@ -23,6 +23,7 @@ import {
   loadSalesRecords,
   registerCustomerMeal,
   registerVisitorMeal,
+  type SaleRecord,
   type SalesCustomer,
   type SalesHistory,
 } from '@/lib/sales';
@@ -43,7 +44,7 @@ export default function SalesScreen() {
   const { user, token, hydrated, logout } = useAuth();
   const [mode, setMode] = useState<Mode>('name');
   const [customers, setCustomers] = useState<SalesCustomer[]>([]);
-  const [myMealsServed, setMyMealsServed] = useState(0);
+  const [agentSales, setAgentSales] = useState<SaleRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selected, setSelected] = useState<SelectedProfile | null>(null);
   const [history, setHistory] = useState<SalesHistory | null>(null);
@@ -51,6 +52,7 @@ export default function SalesScreen() {
   const [selectedDay, setSelectedDay] = useState(() => toLocalDateKey(new Date()));
   const [selectedMonth, setSelectedMonth] = useState(() => toLocalMonthKey(new Date()));
   const [foodType, setFoodType] = useState<'soft' | 'hard' | ''>('');
+  const [foodTypeError, setFoodTypeError] = useState('');
   const [amount, setAmount] = useState('');
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -76,10 +78,17 @@ export default function SalesScreen() {
     ]).start();
   };
 
-  const refreshMealsServed = async (nextToken: string, nextUserId: string, mounted = true) => {
+  const getCustomersAttendedCount = (sales: Array<{ type: string; customer_id?: string | null }>) =>
+    new Set(
+      sales
+        .filter((sale) => sale.type === 'customer' && String(sale.customer_id || '').trim().length > 0)
+        .map((sale) => String(sale.customer_id)),
+    ).size;
+
+  const refreshMetricsSales = async (nextToken: string, nextUserId: string, mounted = true) => {
     const nextSales = await loadSalesRecords(nextToken, { limit: 5000, agent_id: nextUserId });
     if (mounted) {
-      setMyMealsServed(Array.isArray(nextSales) ? nextSales.length : 0);
+      setAgentSales(Array.isArray(nextSales) ? nextSales : []);
     }
   };
 
@@ -98,7 +107,7 @@ export default function SalesScreen() {
 
         if (!active) return;
         setCustomers(nextCustomers);
-        setMyMealsServed(Array.isArray(nextSales) ? nextSales.length : 0);
+        setAgentSales(Array.isArray(nextSales) ? nextSales : []);
       } catch (loadError) {
         if (active) {
           setError(loadError instanceof Error ? loadError.message : 'Failed to load sales screen');
@@ -113,7 +122,7 @@ export default function SalesScreen() {
     void bootstrap();
 
     const intervalId = setInterval(() => {
-      void refreshMealsServed(token, user.id).catch(() => {
+      void refreshMetricsSales(token, user.id).catch(() => {
         // Keep the screen usable even if a refresh fails.
       });
     }, 15000);
@@ -132,6 +141,14 @@ export default function SalesScreen() {
     );
   }, [customers, searchTerm]);
 
+  const filteredMetricSales = useMemo(
+    () => agentSales.filter((sale) => matchesPeriod(sale.created_at, statsFilter, selectedDay, selectedMonth)),
+    [agentSales, selectedDay, selectedMonth, statsFilter],
+  );
+
+  const mealsServedMetric = filteredMetricSales.length;
+  const customersAttendedMetric = getCustomersAttendedCount(filteredMetricSales);
+
   const isVisitor = selected?.id === VISITOR_PROFILE.id;
   const filteredSales = useMemo(() => {
     const sales = Array.isArray(history?.sales) ? history.sales : [];
@@ -141,6 +158,19 @@ export default function SalesScreen() {
   const totalSpent = filteredSales.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0);
   const paid = Number(history?.customer?.balance_credited || 0);
   const outstanding = Math.max(0, totalSpent - paid);
+  const todayKey = toLocalDateKey(new Date());
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayKey = toLocalDateKey(yesterdayDate);
+  const indicatorDayKey =
+    statsFilter === 'yesterday'
+      ? yesterdayKey
+      : statsFilter === 'day'
+      ? selectedDay
+      : todayKey;
+  const dailyMealsCount = (Array.isArray(history?.sales) ? history.sales : []).filter(
+    (sale) => toLocalDateKey(sale.created_at) === indicatorDayKey,
+  ).length;
 
   if (hydrated && user?.role === 'admin') {
     return <Redirect href="/(tabs)" />;
@@ -158,6 +188,7 @@ export default function SalesScreen() {
     setSelectedDay(toLocalDateKey(new Date()));
     setSelectedMonth(toLocalMonthKey(new Date()));
     setFoodType('');
+    setFoodTypeError('');
     setAmount('');
     setLoadingHistory(true);
     try {
@@ -178,6 +209,7 @@ export default function SalesScreen() {
     setSelectedDay(toLocalDateKey(new Date()));
     setSelectedMonth(toLocalMonthKey(new Date()));
     setFoodType('');
+    setFoodTypeError('');
     setAmount('');
     setLoadingHistory(true);
     try {
@@ -212,6 +244,7 @@ export default function SalesScreen() {
     setSelectedDay(toLocalDateKey(new Date()));
     setSelectedMonth(toLocalMonthKey(new Date()));
     setFoodType('');
+    setFoodTypeError('');
     setAmount('');
     setSearchTerm('');
   };
@@ -240,9 +273,11 @@ export default function SalesScreen() {
     if (!selected || !token || submitting) return;
     if (!user?.id) return;
     if (!foodType) {
+      setFoodTypeError('Choose food type before confirming sale');
       setError('Choose soft or hard food');
       return;
     }
+    setFoodTypeError('');
 
     const price = Number(amount);
     if (!price || price < 100 || price > 10000) {
@@ -260,7 +295,6 @@ export default function SalesScreen() {
           food_type: foodType,
           amount: price,
         });
-        setMyMealsServed((current) => current + 1);
         await openVisitor();
       } else {
         await registerCustomerMeal(token, {
@@ -268,11 +302,10 @@ export default function SalesScreen() {
           food_type: foodType,
           amount: price,
         });
-        setMyMealsServed((current) => current + 1);
         await openCustomer(selected as SalesCustomer);
       }
 
-      void refreshMealsServed(token, user.id).catch(() => {
+      void refreshMetricsSales(token, user.id).catch(() => {
         // The optimistic increment already updated the UI.
       });
 
@@ -300,7 +333,7 @@ export default function SalesScreen() {
       ]);
 
       setCustomers(nextCustomers);
-      setMyMealsServed(Array.isArray(nextSales) ? nextSales.length : 0);
+      setAgentSales(Array.isArray(nextSales) ? nextSales : []);
 
       if (selected) {
         setLoadingHistory(true);
@@ -356,7 +389,12 @@ export default function SalesScreen() {
           </View>
           <View style={styles.headerTextWrap}>
             <Text style={styles.headerTitle}>FoodPlug POS</Text>
-            <Text style={styles.headerSubtitle}>{user.display_name || 'Sales rep'}</Text>
+            <Text style={styles.headerSubtitle}>
+              {user.display_name || 'Sales rep'}
+              {(user.organization_name || user.organization_id) ? (
+                <Text style={styles.headerOrganizationText}> - {user.organization_name || user.organization_id}</Text>
+              ) : null}
+            </Text>
           </View>
           <Pressable onPress={handleLogout} style={styles.logoutPill}>
             <Ionicons name="log-out-outline" size={16} color="#2C423F" />
@@ -388,8 +426,8 @@ export default function SalesScreen() {
           </Text>
 
           <View style={styles.metricRow}>
-            <Metric label="Meals served" value={String(myMealsServed)} />
-            <Metric label="Customers" value={String(customers.length)} />
+            <Metric label="Meals served" value={String(mealsServedMetric)} />
+            <Metric label="Customers attended" value={`${customersAttendedMetric}/${customers.length}`} />
           </View>
         </View>
 
@@ -463,10 +501,30 @@ export default function SalesScreen() {
           </>
         ) : (
           <View style={styles.profileWrap}>
-            <Pressable onPress={backToSearch} style={styles.backButton}>
-              <Ionicons name="arrow-back-outline" size={16} color="#5C5C59" />
-              <Text style={styles.backButtonText}>Back to search</Text>
-            </Pressable>
+            <View style={styles.profileHeaderRow}>
+              <Pressable onPress={backToSearch} style={styles.backButton}>
+                <Ionicons name="arrow-back-outline" size={16} color="#5C5C59" />
+                <Text style={styles.backButtonText}>Back to search</Text>
+              </Pressable>
+
+              <View style={styles.mealIndicatorRow}>
+                {[1, 2, 3, 4, 5].map((slot) => {
+                  const isActive = dailyMealsCount >= slot;
+                  const isThreshold = slot === 5 && dailyMealsCount >= 5;
+
+                  return (
+                    <View
+                      key={slot}
+                      style={[
+                        styles.mealIndicatorDot,
+                        isActive && (isThreshold ? styles.mealIndicatorDotActiveRed : styles.mealIndicatorDotActiveGreen),
+                      ]}
+                    />
+                  );
+                })}
+                {dailyMealsCount > 5 ? <Text style={styles.mealIndicatorOverflow}>+{dailyMealsCount - 5}</Text> : null}
+              </View>
+            </View>
 
             <View style={styles.card}>
               <Text style={styles.cardEyebrow}>{isVisitor ? 'Profile' : 'Customer'}</Text>
@@ -517,9 +575,25 @@ export default function SalesScreen() {
               <Text style={styles.sectionTitle}>Choose food type</Text>
 
               <View style={styles.foodRow}>
-                <FoodChip active={foodType === 'soft'} onPress={() => setFoodType('soft')} label="Soft food" />
-                <FoodChip active={foodType === 'hard'} onPress={() => setFoodType('hard')} label="Hard food" />
+                <FoodChip
+                  active={foodType === 'soft'}
+                  onPress={() => {
+                    setFoodType('soft');
+                    setFoodTypeError('');
+                  }}
+                  label="Soft food"
+                />
+                <FoodChip
+                  active={foodType === 'hard'}
+                  onPress={() => {
+                    setFoodType('hard');
+                    setFoodTypeError('');
+                  }}
+                  label="Hard food"
+                />
               </View>
+
+              {foodTypeError ? <Text style={styles.foodTypeErrorText}>{foodTypeError}</Text> : null}
 
               <Text style={styles.amountLabel}>
                 Amount (₦) {isVisitor ? '' : 'stored as negative'}
@@ -747,6 +821,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 13,
   },
+  headerOrganizationText: {
+    color: '#D95D39',
+  },
   logoutPill: {
     width: 36,
     height: 36,
@@ -934,6 +1011,12 @@ const styles = StyleSheet.create({
   profileWrap: {
     gap: 12,
   },
+  profileHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -950,6 +1033,33 @@ const styles = StyleSheet.create({
     color: '#5C5C59',
     fontWeight: '800',
     fontSize: 13,
+  },
+  mealIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  mealIndicatorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E8E6E1',
+    backgroundColor: '#FFFFFF',
+  },
+  mealIndicatorDotActiveGreen: {
+    borderColor: '#16A34A',
+    backgroundColor: '#22C55E',
+  },
+  mealIndicatorDotActiveRed: {
+    borderColor: '#DC2626',
+    backgroundColor: '#EF4444',
+  },
+  mealIndicatorOverflow: {
+    marginLeft: 2,
+    color: '#DC2626',
+    fontSize: 10,
+    fontWeight: '900',
   },
   cardEyebrow: {
     color: '#5C5C59',
@@ -1063,6 +1173,12 @@ const styles = StyleSheet.create({
   },
   foodChipTextActive: {
     color: '#D95D39',
+  },
+  foodTypeErrorText: {
+    color: '#B22222',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
   },
   amountLabel: {
     color: '#5C5C59',

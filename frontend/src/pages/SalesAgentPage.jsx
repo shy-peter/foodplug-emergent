@@ -25,6 +25,7 @@ export default function SalesAgentPage() {
   const [mode, setMode] = useState("name"); // name | pin | fingerprint | visitor
   const [customers, setCustomers] = useState([]);
   const [myMealsServed, setMyMealsServed] = useState(0);
+  const [customersAttended, setCustomersAttended] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [selected, setSelected] = useState(null);
   const [history, setHistory] = useState(null);
@@ -32,6 +33,7 @@ export default function SalesAgentPage() {
   const [selectedDay, setSelectedDay] = useState(() => toLocalDateKey(new Date()));
   const [selectedMonth, setSelectedMonth] = useState(() => toLocalMonthKey(new Date()));
   const [foodType, setFoodType] = useState("");
+  const [foodTypeError, setFoodTypeError] = useState("");
   const [amount, setAmount] = useState("");
   const [saleSubmitting, setSaleSubmitting] = useState(false);
   const [saleFlashActive, setSaleFlashActive] = useState(false);
@@ -66,6 +68,13 @@ export default function SalesAgentPage() {
       }, 560);
     });
   };
+
+  const getCustomersAttendedCount = (sales) =>
+    new Set(
+      sales
+        .filter((sale) => sale.type === "customer" && String(sale.customer_id || "").trim().length > 0)
+        .map((sale) => String(sale.customer_id)),
+    ).size;
 
   const loadCustomers = async () => {
     try {
@@ -109,21 +118,23 @@ export default function SalesAgentPage() {
     loadCustomers();
   }, []);
 
-  useEffect(() => {
-    const loadMyMealsServed = async () => {
-      if (!user?.id) return;
-      try {
-        const res = await api.get("/sales", {
-          params: { limit: 5000, agent_id: user.id },
-        });
-        const sales = Array.isArray(res.data) ? res.data : [];
-        setMyMealsServed(sales.length);
-      } catch {
-        // Keep UI usable even if this metric fails to load.
-      }
-    };
+  const loadMySalesMetrics = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await api.get("/sales", {
+        params: { limit: 5000, agent_id: user.id },
+      });
+      const sales = Array.isArray(res.data) ? res.data : [];
+      setMyMealsServed(sales.length);
+      setCustomersAttended(getCustomersAttendedCount(sales));
+    } catch {
+      // Keep UI usable even if this metric fails to load.
+    }
+  };
 
-    loadMyMealsServed();
+  useEffect(() => {
+    loadMySalesMetrics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useEffect(() => {
@@ -158,6 +169,7 @@ export default function SalesAgentPage() {
     setSelectedDay(toLocalDateKey(new Date()));
     setSelectedMonth(toLocalMonthKey(new Date()));
     setFoodType("");
+    setFoodTypeError("");
     setAmount("");
     try {
       const res = await api.get(`/customers/${c.id}/history`);
@@ -174,6 +186,7 @@ export default function SalesAgentPage() {
     setSelectedDay(toLocalDateKey(new Date()));
     setSelectedMonth(toLocalMonthKey(new Date()));
     setFoodType("");
+    setFoodTypeError("");
     setAmount("");
     setSearchTerm("");
   };
@@ -223,9 +236,11 @@ export default function SalesAgentPage() {
     if (saleSubmitting) return;
     if (!selected) return;
     if (!foodType) {
+      setFoodTypeError("Choose food type before confirming sale");
       toast.error("Choose soft or hard food");
       return;
     }
+    setFoodTypeError("");
     const price = Number(amount);
     if (!price || price < 100 || price > 10000) {
       toast.error("Amount must be between ₦100 and ₦10,000");
@@ -245,6 +260,7 @@ export default function SalesAgentPage() {
       setFoodType("");
       const res = await api.get(`/customers/${selected.id}/history`);
       setHistory(res.data);
+      await loadMySalesMetrics();
     } catch (e) {
       triggerSaleErrorFlash();
       toast.error(e?.response?.data?.detail || "Sale failed");
@@ -256,9 +272,11 @@ export default function SalesAgentPage() {
   const registerVisitor = async () => {
     if (saleSubmitting) return;
     if (!foodType) {
+      setFoodTypeError("Choose food type before confirming sale");
       toast.error("Choose soft or hard food");
       return;
     }
+    setFoodTypeError("");
     const price = Number(amount);
     if (!price || price < 100 || price > 10000) {
       toast.error("Amount must be between ₦100 and ₦10,000");
@@ -280,6 +298,7 @@ export default function SalesAgentPage() {
       if (selected?.id === VISITOR_PROFILE_ID) {
         await loadVisitorProfile();
       }
+      await loadMySalesMetrics();
     } catch (e) {
       triggerSaleErrorFlash();
       toast.error(e?.response?.data?.detail || "Sale failed");
@@ -325,7 +344,7 @@ export default function SalesAgentPage() {
                 {(user?.organization_name || user?.organization_id) && (
                   <>
                     {" - "}
-                    <span className="font-mono italic">{user?.organization_name || user?.organization_id}</span>
+                    <span className="font-mono italic text-[#D95D39]">{user?.organization_name || user?.organization_id}</span>
                   </>
                 )}
               </p>
@@ -344,16 +363,25 @@ export default function SalesAgentPage() {
       <main className="max-w-4xl mx-auto px-4 py-6 pb-24">
         {!selected && (
           <>
-            <div className="mb-6">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#5C5C59] font-bold">
+            <div className="mb-6 rounded-[28px] bg-[#2C423F] p-6 md:p-7">
+              <p className="text-xs uppercase tracking-[0.3em] text-[#D4A373] font-bold">
                 Point of sale
               </p>
-              <h1 className="font-display font-black text-3xl text-[#2C423F] mt-1">
+              <h1 className="font-display font-black text-3xl text-white mt-1">
                 Register a meal
               </h1>
-              <div className="inline-flex items-center gap-2 mt-3 px-3 py-2 rounded-full border border-[#E8E6E1] bg-white">
-                <span className="text-xs uppercase tracking-[0.18em] text-[#5C5C59] font-bold">Total meals served</span>
-                <span className="font-display font-black text-[#2C423F]">{myMealsServed}</span>
+              <p className="text-sm text-[rgba(255,244,229,0.84)] mt-2">
+                Search a customer by name, confirm with PIN, or open the visitor profile.
+              </p>
+              <div className="grid grid-cols-2  gap-3 mt-4">
+                <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[rgba(255,255,255,0.72)] font-bold">Meals served</p>
+                  <p className="font-display font-black text-white text-2xl mt-1">{myMealsServed}</p>
+                </div>
+                <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[rgba(255,255,255,0.72)] font-bold">Customers attended</p>
+                  <p className="font-display font-black text-white text-2xl mt-1">{customersAttended}/{customers.length}</p>
+                </div>
               </div>
             </div>
 
@@ -541,15 +569,52 @@ export default function SalesAgentPage() {
               );
               const paid = Number(history?.customer?.balance_credited || 0);
               const outstanding = Math.max(0, totalSales - paid);
+              const todayKey = toLocalDateKey(new Date());
+              const yesterdayDate = new Date();
+              yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+              const yesterdayKey = toLocalDateKey(yesterdayDate);
+              const indicatorDayKey =
+                statsFilter === "yesterday"
+                  ? yesterdayKey
+                  : statsFilter === "day"
+                    ? selectedDay
+                    : todayKey;
+              const dailyMealsCount = (Array.isArray(history?.sales) ? history.sales : []).filter(
+                (sale) => toLocalDateKey(sale.created_at) === indicatorDayKey,
+              ).length;
               return (
                 <>
-                  <button
-                    onClick={backToSearch}
-                    data-testid="back-to-search-button"
-                    className="w-full sm:w-auto h-11 px-4 inline-flex items-center justify-center gap-2 text-sm font-semibold text-[#5C5C59] hover:text-[#2C423F] mb-4 border border-[#E8E6E1] rounded-full"
-                  >
-                    <ArrowLeft className="w-4 h-4" /> Back to search
-                  </button>
+                  <div className="w-full flex items-center justify-between gap-3 mb-4">
+                    <button
+                      onClick={backToSearch}
+                      data-testid="back-to-search-button"
+                      className="w-full sm:w-auto h-11 px-4 inline-flex items-center justify-center gap-2 text-sm font-semibold text-[#5C5C59] hover:text-[#2C423F] border border-[#E8E6E1] rounded-full"
+                    >
+                      <ArrowLeft className="w-4 h-4" /> Back to search
+                    </button>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((slot) => {
+                        const isActive = dailyMealsCount >= slot;
+                        const isThreshold = slot === 5 && dailyMealsCount >= 5;
+                        const colorClass = isActive
+                          ? isThreshold
+                            ? "bg-red-500 border-red-600"
+                            : "bg-green-500 border-green-600"
+                          : "bg-white border-[#E8E6E1]";
+
+                        return (
+                          <div
+                            key={slot}
+                            className={`h-2.5 w-2.5 rounded-full border ${colorClass}`}
+                            title={`Meal ${slot}`}
+                          />
+                        );
+                      })}
+                      {dailyMealsCount > 5 && (
+                        <span className="ml-1 text-[10px] font-bold text-red-600">+{dailyMealsCount - 5}</span>
+                      )}
+                    </div>
+                  </div>
 
                   <div className="card-elevated p-6">
                     <div className="flex items-start justify-between">
@@ -660,7 +725,10 @@ export default function SalesAgentPage() {
                     </h3>
                     <div className="grid grid-cols-2 gap-3 mt-2">
                       <button
-                        onClick={() => setFoodType("soft")}
+                        onClick={() => {
+                          setFoodType("soft");
+                          setFoodTypeError("");
+                        }}
                         data-testid={isVisitorProfile ? "visitor-food-type-soft" : "food-type-soft"}
                         className={`h-10  mx-auto inline-flex items-center justify-center text-center p-3 rounded-full border-2 border-dashed font-bold transition-colors ${
                           foodType === "soft"
@@ -672,7 +740,10 @@ export default function SalesAgentPage() {
                         Soft food
                       </button>
                       <button
-                        onClick={() => setFoodType("hard")}
+                        onClick={() => {
+                          setFoodType("hard");
+                          setFoodTypeError("");
+                        }}
                         data-testid={isVisitorProfile ? "visitor-food-type-hard" : "food-type-hard"}
                         className={`h-16  mx-auto inline-flex items-center justify-center text-center p-3 rounded-full border-2 border-dashed font-bold transition-colors ${
                           foodType === "hard"
@@ -684,6 +755,9 @@ export default function SalesAgentPage() {
                         Hard food
                       </button>
                     </div>
+                    {foodTypeError ? (
+                      <p className="mt-1 text-sm font-semibold text-[#B22222]">{foodTypeError}</p>
+                    ) : null}
 
                     <div className="mt-4">
                       <Label className={isVisitorProfile ? "" : "text-[#D95D39] font-bold"}>
