@@ -78,9 +78,15 @@ export default function DashboardPage() {
     try {
       const params = { period };
       if (period === "month") params.month = month;
+
+      const salesParams = { limit: 10 };
+      const range = buildDashboardRange(period, month);
+      if (range.start) salesParams.start = range.start;
+      if (range.end) salesParams.end = range.end;
+
       const [s, l, c] = await Promise.all([
         api.get("/stats", { params }),
-        api.get("/sales", { params: { limit: 10 } }),
+        api.get("/sales", { params: salesParams }),
         api.get("/customers"),
       ]);
       setStats(s.data);
@@ -700,6 +706,40 @@ export default function DashboardPage() {
       {activeTab === "payment-history" && <PaymentHistoryTab />}
     </div>
   );
+}
+
+function buildDashboardRange(period, month) {
+  const now = new Date();
+
+  if (period === "day") {
+    const start = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  if (period === "yesterday") {
+    const start = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1),
+    );
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  if (period === "month") {
+    const [year, monthIndex] = String(month || "").split("-");
+    if (!year || !monthIndex) {
+      return { start: "", end: "" };
+    }
+    const start = new Date(Date.UTC(Number(year), Number(monthIndex) - 1, 1));
+    const end = new Date(Date.UTC(Number(year), Number(monthIndex), 1));
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  return { start: "", end: "" };
 }
 
 function KpiCard({

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, UserCog, Receipt, LogOut, Utensils } from "lucide-react";
+import { LayoutDashboard, Users, UserCog, Receipt, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const navItems = [
@@ -23,8 +23,8 @@ export default function AdminLayout() {
             {/* Sidebar */}
             <aside className="hidden md:flex md:w-64 flex-col border-r border-[#E8E6E1] bg-white sticky top-0 h-screen">
                 <div className="px-6 py-6 flex items-center gap-3 border-b border-[#E8E6E1]">
-                    <div className="w-10 h-10 rounded-xl bg-[#D95D39] flex items-center justify-center text-white">
-                        <Utensils className="w-5 h-5" />
+                    <div className="w-10 h-10 rounded-xl bg-white border border-[#E8E6E1] flex items-center justify-center overflow-hidden">
+                        <img src="/favicon.ico" alt="FoodPlug" className="w-7 h-7 object-contain" />
                     </div>
                     <div>
                         <p className="font-display font-black text-lg text-[#2C423F] leading-none">FoodPlug</p>
@@ -74,8 +74,8 @@ export default function AdminLayout() {
             {/* Mobile top bar */}
             <div className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between bg-white/90 backdrop-blur border-b border-[#E8E6E1] px-4 h-14">
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-[#D95D39] flex items-center justify-center text-white">
-                        <Utensils className="w-4 h-4" />
+                    <div className="w-8 h-8 rounded-lg bg-white border border-[#E8E6E1] flex items-center justify-center overflow-hidden">
+                        <img src="/favicon.ico" alt="FoodPlug" className="w-6 h-6 object-contain" />
                     </div>
                     <span className="font-display font-black">FoodPlug</span>
                 </div>

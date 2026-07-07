@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Utensils,
   LogOut,
   Search,
   UserRound,
@@ -30,11 +29,16 @@ export default function SalesAgentPage() {
   const [selected, setSelected] = useState(null);
   const [history, setHistory] = useState(null);
   const [statsFilter, setStatsFilter] = useState("today");
-  const [selectedDay, setSelectedDay] = useState(() => toLocalDateKey(new Date()));
-  const [selectedMonth, setSelectedMonth] = useState(() => toLocalMonthKey(new Date()));
+  const [selectedDay, setSelectedDay] = useState(() =>
+    toLocalDateKey(new Date()),
+  );
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    toLocalMonthKey(new Date()),
+  );
   const [foodType, setFoodType] = useState("");
   const [foodTypeError, setFoodTypeError] = useState("");
   const [amount, setAmount] = useState("");
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [saleSubmitting, setSaleSubmitting] = useState(false);
   const [saleFlashActive, setSaleFlashActive] = useState(false);
   const [saleErrorFlashActive, setSaleErrorFlashActive] = useState(false);
@@ -72,16 +76,20 @@ export default function SalesAgentPage() {
   const getCustomersAttendedCount = (sales) =>
     new Set(
       sales
-        .filter((sale) => sale.type === "customer" && String(sale.customer_id || "").trim().length > 0)
+        .filter(
+          (sale) =>
+            sale.type === "customer" &&
+            String(sale.customer_id || "").trim().length > 0,
+        )
         .map((sale) => String(sale.customer_id)),
     ).size;
 
   const loadCustomers = async () => {
     try {
       const res = await api.get("/customers");
-      const filteredCustomers = (Array.isArray(res.data) ? res.data : []).filter(
-        (c) => String(c.pin || "").trim() !== "0000",
-      );
+      const filteredCustomers = (
+        Array.isArray(res.data) ? res.data : []
+      ).filter((c) => String(c.pin || "").trim() !== "0000");
       setCustomers(filteredCustomers);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Failed to load customers");
@@ -90,7 +98,7 @@ export default function SalesAgentPage() {
 
   const loadVisitorProfile = async () => {
     try {
-      const res = await api.get("/sales", { params: { limit: 5000 } });
+      const res = await api.get("/sales");
       const visitorSales = (Array.isArray(res.data) ? res.data : []).filter(
         (sale) => sale.type === "visitor",
       );
@@ -104,7 +112,10 @@ export default function SalesAgentPage() {
       setHistory({
         sales: visitorSales,
         total_meals: visitorSales.length,
-        total_cost: visitorSales.reduce((sum, sale) => sum + Number(sale.amount || 0), 0),
+        total_cost: visitorSales.reduce(
+          (sum, sale) => sum + Number(sale.amount || 0),
+          0,
+        ),
       });
       setFoodType("");
       setAmount("");
@@ -122,7 +133,7 @@ export default function SalesAgentPage() {
     if (!user?.id) return;
     try {
       const res = await api.get("/sales", {
-        params: { limit: 5000, agent_id: user.id },
+        params: { agent_id: user.id },
       });
       const sales = Array.isArray(res.data) ? res.data : [];
       setMyMealsServed(sales.length);
@@ -160,8 +171,19 @@ export default function SalesAgentPage() {
 
   const filteredSales = useMemo(() => {
     const sales = Array.isArray(history?.sales) ? history.sales : [];
-    return sales.filter((sale) => matchesPeriod(sale.created_at, statsFilter, selectedDay, selectedMonth));
+    return sales.filter((sale) =>
+      matchesPeriod(sale.created_at, statsFilter, selectedDay, selectedMonth),
+    );
   }, [history, selectedDay, selectedMonth, statsFilter]);
+
+  const visibleSales = useMemo(() => {
+    if (showAllTransactions) return filteredSales;
+    return filteredSales.slice(0, 3);
+  }, [filteredSales, showAllTransactions]);
+
+  useEffect(() => {
+    setShowAllTransactions(false);
+  }, [selected?.id, statsFilter, selectedDay, selectedMonth]);
 
   const selectCustomer = async (c) => {
     setSelected(c);
@@ -332,8 +354,12 @@ export default function SalesAgentPage() {
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-[#E8E6E1]">
         <div className="max-w-4xl mx-auto flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#D95D39] flex items-center justify-center text-white">
-              <Utensils className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-white border border-[#E8E6E1] flex items-center justify-center overflow-hidden">
+              <img
+                src="/favicon.ico"
+                alt="FoodPlug"
+                className="w-6 h-6 object-contain"
+              />
             </div>
             <div>
               <p className="font-display font-black text-[#2C423F] leading-none">
@@ -344,7 +370,9 @@ export default function SalesAgentPage() {
                 {(user?.organization_name || user?.organization_id) && (
                   <>
                     {" - "}
-                    <span className="font-mono italic text-[#D95D39]">{user?.organization_name || user?.organization_id}</span>
+                    <span className="font-mono italic text-[#D95D39]">
+                      {user?.organization_name || user?.organization_id}
+                    </span>
                   </>
                 )}
               </p>
@@ -371,16 +399,25 @@ export default function SalesAgentPage() {
                 Register a meal
               </h1>
               <p className="text-sm text-[rgba(255,244,229,0.84)] mt-2">
-                Search a customer by name, confirm with PIN, or open the visitor profile.
+                Search a customer by name, confirm with PIN, or open the visitor
+                profile.
               </p>
               <div className="grid grid-cols-2  gap-3 mt-4">
                 <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-[rgba(255,255,255,0.72)] font-bold">Meals served</p>
-                  <p className="font-display font-black text-white text-2xl mt-1">{myMealsServed}</p>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[rgba(255,255,255,0.72)] font-bold">
+                   Total Meals served
+                  </p>
+                  <p className="font-display font-black text-white text-2xl mt-1">
+                    {myMealsServed}
+                  </p>
                 </div>
                 <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-[rgba(255,255,255,0.72)] font-bold">Customers attended</p>
-                  <p className="font-display font-black text-white text-2xl mt-1">{customersAttended}/{customers.length}</p>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[rgba(255,255,255,0.72)] font-bold">
+                    Customers attended
+                  </p>
+                  <p className="font-display font-black text-white text-2xl mt-1">
+                    {customersAttended}/{customers.length}
+                  </p>
                 </div>
               </div>
             </div>
@@ -555,7 +592,6 @@ export default function SalesAgentPage() {
                 </div>
               </div>
             )}
-
           </>
         )}
 
@@ -569,19 +605,7 @@ export default function SalesAgentPage() {
               );
               const paid = Number(history?.customer?.balance_credited || 0);
               const outstanding = Math.max(0, totalSales - paid);
-              const todayKey = toLocalDateKey(new Date());
-              const yesterdayDate = new Date();
-              yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-              const yesterdayKey = toLocalDateKey(yesterdayDate);
-              const indicatorDayKey =
-                statsFilter === "yesterday"
-                  ? yesterdayKey
-                  : statsFilter === "day"
-                    ? selectedDay
-                    : todayKey;
-              const dailyMealsCount = (Array.isArray(history?.sales) ? history.sales : []).filter(
-                (sale) => toLocalDateKey(sale.created_at) === indicatorDayKey,
-              ).length;
+              const indicatorMealsCount = filteredSales.length;
               return (
                 <>
                   <div className="w-full flex items-center justify-between gap-3 mb-4">
@@ -594,8 +618,9 @@ export default function SalesAgentPage() {
                     </button>
                     <div className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map((slot) => {
-                        const isActive = dailyMealsCount >= slot;
-                        const isThreshold = slot === 5 && dailyMealsCount >= 5;
+                        const isActive = indicatorMealsCount >= slot;
+                        const isThreshold =
+                          slot === 5 && indicatorMealsCount >= 5;
                         const colorClass = isActive
                           ? isThreshold
                             ? "bg-red-500 border-red-600"
@@ -610,8 +635,10 @@ export default function SalesAgentPage() {
                           />
                         );
                       })}
-                      {dailyMealsCount > 5 && (
-                        <span className="ml-1 text-[10px] font-bold text-red-600">+{dailyMealsCount - 5}</span>
+                      {indicatorMealsCount > 5 && (
+                        <span className="ml-1 text-[10px] font-bold text-red-600">
+                          +{indicatorMealsCount - 5}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -625,7 +652,9 @@ export default function SalesAgentPage() {
                         <h2 className="font-display font-black text-2xl text-[#2C423F] mt-1">
                           {selected.name}
                         </h2>
-                        <p className="text-sm text-[#5C5C59]">{selected.contractor}</p>
+                        <p className="text-sm text-[#5C5C59]">
+                          {selected.contractor}
+                        </p>
                       </div>
                       <div className="text-right">
                         <p className="text-xs uppercase tracking-widest text-[#5C5C59]">
@@ -706,17 +735,30 @@ export default function SalesAgentPage() {
                         </p>
                         <p
                           className={`font-display font-black text-2xl mt-1 ${
-                            isVisitorProfile ? "text-[#2C423F]" : outstanding > 0 ? "text-[#D95D39]" : "text-[#4F7942]"
+                            isVisitorProfile
+                              ? "text-[#2C423F]"
+                              : outstanding > 0
+                                ? "text-[#D95D39]"
+                                : "text-[#4F7942]"
                           }`}
                           data-testid="customer-total-cost"
                         >
-                          {formatNaira(isVisitorProfile ? totalSales : outstanding)}
+                          {formatNaira(
+                            isVisitorProfile ? totalSales : outstanding,
+                          )}
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="card-elevated p-2 mt-2" data-testid={isVisitorProfile ? "visitor-register-meal" : "customer-register-meal"}>
+                  <div
+                    className="card-elevated p-2 mt-2"
+                    data-testid={
+                      isVisitorProfile
+                        ? "visitor-register-meal"
+                        : "customer-register-meal"
+                    }
+                  >
                     <p className="text-xs uppercase tracking-widest text-[#5C5C59] font-bold">
                       Register meal
                     </p>
@@ -729,7 +771,11 @@ export default function SalesAgentPage() {
                           setFoodType("soft");
                           setFoodTypeError("");
                         }}
-                        data-testid={isVisitorProfile ? "visitor-food-type-soft" : "food-type-soft"}
+                        data-testid={
+                          isVisitorProfile
+                            ? "visitor-food-type-soft"
+                            : "food-type-soft"
+                        }
                         className={`h-10  mx-auto inline-flex items-center justify-center text-center p-3 rounded-full border-2 border-dashed font-bold transition-colors ${
                           foodType === "soft"
                             ? "border-[#D95D39] bg-[#F9F1EE] text-[#D95D39]"
@@ -744,8 +790,12 @@ export default function SalesAgentPage() {
                           setFoodType("hard");
                           setFoodTypeError("");
                         }}
-                        data-testid={isVisitorProfile ? "visitor-food-type-hard" : "food-type-hard"}
-                        className={`h-16  mx-auto inline-flex items-center justify-center text-center p-3 rounded-full border-2 border-dashed font-bold transition-colors ${
+                        data-testid={
+                          isVisitorProfile
+                            ? "visitor-food-type-hard"
+                            : "food-type-hard"
+                        }
+                        className={`h-10  mx-auto inline-flex items-center justify-center text-center p-3 rounded-full border-2 border-dashed font-bold transition-colors ${
                           foodType === "hard"
                             ? "border-[#D95D39] bg-[#F9F1EE] text-[#D95D39]"
                             : "border-[#E8E6E1] text-[#2C423F] hover:border-[#D95D39]/50"
@@ -756,19 +806,36 @@ export default function SalesAgentPage() {
                       </button>
                     </div>
                     {foodTypeError ? (
-                      <p className="mt-1 text-sm font-semibold text-[#B22222]">{foodTypeError}</p>
+                      <p className="mt-1 text-sm font-semibold text-[#B22222]">
+                        {foodTypeError}
+                      </p>
                     ) : null}
 
                     <div className="mt-4">
-                      <Label className={isVisitorProfile ? "" : "text-[#D95D39] font-bold"}>
-                        Amount (₦) {!isVisitorProfile && <span className="text-[#D95D39]">— Stored as negative</span>}
+                      <Label
+                        className={
+                          isVisitorProfile ? "" : "text-[#D95D39] font-bold"
+                        }
+                      >
+                        Amount (₦){" "}
+                        {!isVisitorProfile && (
+                          <span className="text-[#D95D39]">
+                            — Stored as negative
+                          </span>
+                        )}
                       </Label>
                       <div className="relative">
                         {!isVisitorProfile && (
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#D95D39] font-bold text-lg">−</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#D95D39] font-bold text-lg">
+                            −
+                          </span>
                         )}
                         <Input
-                          data-testid={isVisitorProfile ? "visitor-sale-amount-input" : "sale-amount-input"}
+                          data-testid={
+                            isVisitorProfile
+                              ? "visitor-sale-amount-input"
+                              : "sale-amount-input"
+                          }
                           type="number"
                           value={amount}
                           onChange={(e) => setAmount(e.target.value)}
@@ -779,34 +846,38 @@ export default function SalesAgentPage() {
                     </div>
 
                     <Button
-                      data-testid={isVisitorProfile ? "record-visitor-button" : "confirm-sale-button"}
-                      onClick={isVisitorProfile ? registerVisitor : registerSale}
+                      data-testid={
+                        isVisitorProfile
+                          ? "record-visitor-button"
+                          : "confirm-sale-button"
+                      }
+                      onClick={
+                        isVisitorProfile ? registerVisitor : registerSale
+                      }
                       disabled={saleSubmitting}
-                      className="w-full max-w-full h-12 bg-[#D95D39] hover:bg-[#C2502F] text-white font-bold mt-4 text-sm sm:text-base"
+                      className={`w-full max-w-full h-12 font-bold mt-4 text-sm sm:text-base ${
+                        isVisitorProfile
+                          ? "bg-[#DDF4D7] hover:bg-[#CFECC7] text-[#2C423F]"
+                          : "bg-[#D95D39] hover:bg-[#C2502F] text-white"
+                      }`}
                     >
-                      {saleSubmitting ? "Confirming..." : "Confirm sale"}
+                      {saleSubmitting
+                        ? "Confirming..."
+                        : isVisitorProfile
+                          ? "Pay cash"
+                          : "Confirm sale"}
                     </Button>
                   </div>
 
                   {filteredSales.length > 0 && (
                     <div className="card-elevated p-6 mt-4">
                       <h3 className="font-display font-bold text-xl text-[#2C423F] mt-1 mb-3">
-                        {isVisitorProfile ? "Unregistered users food data" : "Food history"}
+                        {isVisitorProfile ? "Visitors history" : "Food history"}
                       </h3>
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                           <thead>
                             <tr>
-                              {isVisitorProfile && (
-                                <th className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold pb-2">
-                                  Visitor
-                                </th>
-                              )}
-                              {isVisitorProfile && (
-                                <th className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold pb-2">
-                                  Contractor
-                                </th>
-                              )}
                               <th className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold pb-2">
                                 Date
                               </th>
@@ -819,14 +890,11 @@ export default function SalesAgentPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredSales.slice(0, 10).map((s) => (
-                              <tr key={s.id} className="border-b border-[#E8E6E1]">
-                                {isVisitorProfile && (
-                                  <td className="py-2 text-sm text-[#2C423F]">{s.customer_name}</td>
-                                )}
-                                {isVisitorProfile && (
-                                  <td className="py-2 text-sm text-[#2C423F]">{s.contractor}</td>
-                                )}
+                            {visibleSales.map((s) => (
+                              <tr
+                                key={s.id}
+                                className="border-b border-[#E8E6E1]"
+                              >
                                 <td className="py-2 text-sm text-[#2C423F]">
                                   {new Date(s.created_at)
                                     .toLocaleString("en-GB", {
@@ -838,7 +906,9 @@ export default function SalesAgentPage() {
                                     })
                                     .toLowerCase()}
                                 </td>
-                                <td className="py-2 text-sm text-[#2C423F] capitalize">{s.food_type}</td>
+                                <td className="py-2 text-sm text-[#2C423F] capitalize">
+                                  {s.food_type}
+                                </td>
                                 <td className="py-2 text-sm text-[#2C423F] text-right font-semibold">
                                   {formatNaira(s.amount)}
                                 </td>
@@ -847,6 +917,17 @@ export default function SalesAgentPage() {
                           </tbody>
                         </table>
                       </div>
+                      {!showAllTransactions && filteredSales.length > 3 && (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowAllTransactions(true)}
+                            className="text-sm font-semibold text-[#D95D39] hover:text-[#C2502F]"
+                          >
+                            Show more
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

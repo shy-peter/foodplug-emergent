@@ -289,8 +289,37 @@ function requireAdmin(user: SessionUser) {
 }
 
 async function listAll<T extends Models.Document>(collectionId: string, queries: string[] = []) {
-  const res = await db.listDocuments<T>(DATABASE_ID as string, collectionId, [Query.limit(5000), ...queries]);
-  return res.documents;
+  const hasExplicitLimit = queries.some((query) => /^limit\(\d+\)$/.test(String(query)));
+  if (hasExplicitLimit) {
+    const res = await db.listDocuments<T>(DATABASE_ID as string, collectionId, queries);
+    return res.documents;
+  }
+
+  const pageSize = 500;
+  const documents: T[] = [];
+  let cursorAfter: string | null = null;
+
+  while (true) {
+    const pageQueries = [...queries, Query.limit(pageSize)];
+    if (cursorAfter) {
+      pageQueries.push(Query.cursorAfter(cursorAfter));
+    }
+
+    const res = await db.listDocuments<T>(DATABASE_ID as string, collectionId, pageQueries);
+    documents.push(...res.documents);
+
+    if (res.documents.length < pageSize) {
+      break;
+    }
+
+    const lastDocument = res.documents[res.documents.length - 1];
+    cursorAfter = lastDocument?.$id || null;
+    if (!cursorAfter) {
+      break;
+    }
+  }
+
+  return documents;
 }
 
 async function ensureSeedData() {
@@ -504,7 +533,11 @@ async function handleGet(path: string, options?: GetOptions) {
 
   if (path === "/sales") {
     const params = options?.params || {};
-    const limit = Number(params.limit || 500);
+    const hasExplicitLimit =
+      params.limit !== undefined &&
+      params.limit !== null &&
+      String(params.limit).trim() !== "";
+    const limit = hasExplicitLimit ? Number(params.limit) : null;
     const customerId = (params.customer_id as string | undefined) || "";
     const agentId = (params.agent_id as string | undefined) || "";
     const start = (params.start as string | undefined) || "";
@@ -514,15 +547,20 @@ async function handleGet(path: string, options?: GetOptions) {
       Query.equal("organization_id", organizationId),
       Query.orderDesc("created_at"),
     ]);
-    return sales
+    const filteredSales = sales
       .filter((sale) => {
         if (customerId && sale.customer_id !== customerId) return false;
         if (agentId && sale.agent_id !== agentId) return false;
         if (start && sale.created_at < start) return false;
-        if (end && sale.created_at > end) return false;
+        if (end && sale.created_at >= end) return false;
         return true;
-      })
-      .slice(0, limit);
+      });
+
+    if (!hasExplicitLimit || !Number.isFinite(limit) || Number(limit) <= 0) {
+      return filteredSales;
+    }
+
+    return filteredSales.slice(0, Number(limit));
   }
 
   if (path === "/payment-history") {
