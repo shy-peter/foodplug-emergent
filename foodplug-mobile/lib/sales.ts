@@ -75,21 +75,27 @@ function filterSaleRecords(
   sales: SaleRecord[],
   params: Record<string, string | number | undefined>,
 ): SaleRecord[] {
-  const limit = Number(params.limit || 500);
+  const hasExplicitLimit =
+    params.limit !== undefined && params.limit !== null && String(params.limit).trim() !== '';
+  const limit = hasExplicitLimit ? Number(params.limit) : null;
   const customerId = String(params.customer_id || '').trim();
   const agentId = String(params.agent_id || '').trim();
   const start = String(params.start || '').trim();
   const end = String(params.end || '').trim();
 
-  return sales
-    .filter((sale) => {
+  const filteredSales = sales.filter((sale) => {
       if (customerId && sale.customer_id !== customerId) return false;
       if (agentId && sale.agent_id !== agentId) return false;
       if (start && sale.created_at < start) return false;
       if (end && sale.created_at > end) return false;
       return true;
-    })
-    .slice(0, limit);
+    });
+
+  if (!hasExplicitLimit || !Number.isFinite(limit) || Number(limit) <= 0) {
+    return filteredSales;
+  }
+
+  return filteredSales.slice(0, Number(limit));
 }
 
 export async function loadSalesCustomers(token: string) {

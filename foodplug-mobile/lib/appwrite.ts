@@ -100,8 +100,37 @@ export async function listAll<T extends Models.Document>(collectionId: string, q
     throw createApiError('Missing EXPO_PUBLIC_APPWRITE_DATABASE_ID.', 500);
   }
 
-  const response = await db.listDocuments<T>(DATABASE_ID, collectionId, [Query.limit(5000), ...queries]);
-  return response.documents;
+  const hasExplicitLimit = queries.some((query) => /^limit\(\d+\)$/.test(String(query)));
+  if (hasExplicitLimit) {
+    const response = await db.listDocuments<T>(DATABASE_ID, collectionId, queries);
+    return response.documents;
+  }
+
+  const pageSize = 500;
+  const documents: T[] = [];
+  let cursorAfter: string | null = null;
+
+  while (true) {
+    const pageQueries = [...queries, Query.limit(pageSize)];
+    if (cursorAfter) {
+      pageQueries.push(Query.cursorAfter(cursorAfter));
+    }
+
+    const response = await db.listDocuments<T>(DATABASE_ID, collectionId, pageQueries);
+    documents.push(...response.documents);
+
+    if (response.documents.length < pageSize) {
+      break;
+    }
+
+    const lastDocument = response.documents[response.documents.length - 1];
+    cursorAfter = lastDocument?.$id || null;
+    if (!cursorAfter) {
+      break;
+    }
+  }
+
+  return documents;
 }
 
 export async function createDoc(collectionId: string, payload: Record<string, unknown>) {

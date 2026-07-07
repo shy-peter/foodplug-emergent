@@ -210,7 +210,6 @@ export async function loadDashboardOverview(token: string, user: SessionUser, pe
     listAll<SaleDoc>(SALES_COLLECTION_ID, [
       Query.equal('organization_id', user.organization_id),
       Query.orderDesc('created_at'),
-      Query.limit(100),
     ]),
     listAll<CustomerDoc>(CUSTOMERS_COLLECTION_ID, [Query.equal('organization_id', user.organization_id)]),
     listAll<UserDoc>(USERS_COLLECTION_ID, [
