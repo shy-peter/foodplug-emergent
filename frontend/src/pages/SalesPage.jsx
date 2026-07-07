@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, formatNaira } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,25 +14,41 @@ import { Input } from "@/components/ui/input";
 import { Download, FileSpreadsheet, FileText, Receipt, Search } from "lucide-react";
 
 export default function SalesPage() {
+    const navigate = useNavigate();
     const [sales, setSales] = useState([]);
     const [agents, setAgents] = useState([]);
-    const [customers, setCustomers] = useState([]);
+    const [branches, setBranches] = useState([]);
+    const [activeTab, setActiveTab] = useState("overview");
     const [agentFilter, setAgentFilter] = useState("all");
-    const [owingOnly, setOwingOnly] = useState(false);
+    const [customerFilter, setCustomerFilter] = useState("all");
+    const [locationFilter, setLocationFilter] = useState("all");
+    const [dateFilter, setDateFilter] = useState("today");
+    const [customDate, setCustomDate] = useState(() => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, "0");
+        const d = String(now.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    });
     const [q, setQ] = useState("");
     const [loading, setLoading] = useState(true);
 
     const fetch = async () => {
         setLoading(true);
         try {
-            const [s, a, c] = await Promise.all([
-                api.get("/sales", { params: { limit: 2000 } }),
+            const salesParams = { limit: 2000 };
+            if (locationFilter !== "all") {
+                salesParams.location = locationFilter;
+            }
+
+            const [s, a, b] = await Promise.all([
+                api.get("/sales", { params: salesParams }),
                 api.get("/agents"),
-                api.get("/customers"),
+                api.get("/branches"),
             ]);
             setSales(s.data);
             setAgents(a.data);
-            setCustomers(c.data);
+            setBranches(b.data || []);
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Failed to load sales");
         } finally {
@@ -41,28 +58,47 @@ export default function SalesPage() {
 
     useEffect(() => {
         fetch();
-    }, []);
+    }, [locationFilter]);
 
-    // Build a map of customers with outstanding balance
-    const customersWithOutstanding = useMemo(() => {
-        const map = {};
-        for (const customer of customers) {
-            // Calculate total owed by this customer from sales
-            const totalOwed = sales
-                .filter((s) => s.customer_id === customer.id && s.type === "customer")
-                .reduce((sum, s) => sum + Math.abs(Number(s.amount || 0)), 0);
-            const paid = Number(customer.balance_credited || 0);
-            const outstanding = Math.max(0, totalOwed - paid);
-            map[customer.id] = outstanding > 0;
+    const isWithinDateFilter = (createdAt) => {
+        const saleDate = new Date(createdAt);
+        if (Number.isNaN(saleDate.getTime())) return false;
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfTomorrow = new Date(startOfToday);
+        startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+
+        if (dateFilter === "today") {
+            return saleDate >= startOfToday && saleDate < startOfTomorrow;
         }
-        return map;
-    }, [customers, sales]);
+
+        if (dateFilter === "yesterday") {
+            const startOfYesterday = new Date(startOfToday);
+            startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+            return saleDate >= startOfYesterday && saleDate < startOfToday;
+        }
+
+        if (dateFilter === "custom") {
+            if (!customDate) return true;
+            const [year, month, day] = customDate.split("-").map(Number);
+            if (!year || !month || !day) return true;
+            const customStart = new Date(year, month - 1, day);
+            const customEnd = new Date(customStart);
+            customEnd.setDate(customEnd.getDate() + 1);
+            return saleDate >= customStart && saleDate < customEnd;
+        }
+
+        return true;
+    };
 
     const filtered = useMemo(() => {
         const query = q.trim().toLowerCase();
         return sales.filter((s) => {
             if (agentFilter !== "all" && s.agent_id !== agentFilter) return false;
-            if (owingOnly && s.type === "customer" && !customersWithOutstanding[s.customer_id]) return false;
+            if (customerFilter === "cashpay" && s.type !== "visitor") return false;
+            if (customerFilter === "registered" && s.type !== "customer") return false;
+            if (!isWithinDateFilter(s.created_at)) return false;
             if (!query) return true;
             return (
                 s.customer_name.toLowerCase().includes(query) ||
@@ -70,7 +106,7 @@ export default function SalesPage() {
                 s.agent_name.toLowerCase().includes(query)
             );
         });
-    }, [sales, agentFilter, q, owingOnly, customersWithOutstanding]);
+    }, [sales, agentFilter, customerFilter, dateFilter, customDate, q]);
 
     const totalRevenue = filtered.reduce((acc, s) => acc + s.amount, 0);
 
@@ -203,6 +239,45 @@ export default function SalesPage() {
                 </div>
             </div>
 
+            <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1">
+                {[
+                    { id: "overview", label: "Transactions" },
+                    { id: "payment-history", label: "Payment History" },
+                ].map((t) => (
+                    <button
+                        key={t.id}
+                        onClick={() => setActiveTab(t.id)}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
+                            activeTab === t.id
+                                ? "bg-[#2C423F] text-white"
+                                : "text-[#5C5C59] hover:text-[#2C423F]"
+                        }`}
+                    >
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
+            <div>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                    <SelectTrigger className="w-full md:w-[240px] h-11 bg-white border-[#E8E6E1]">
+                        <SelectValue placeholder="All branches" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All branches</SelectItem>
+                        {branches.map((branch) => {
+                            const label = `${branch.branch_name} - ${branch.sub_branch_name}`;
+                            return (
+                                <SelectItem key={branch.id} value={label}>
+                                    {label}
+                                </SelectItem>
+                            );
+                        })}
+                    </SelectContent>
+                </Select>
+            </div>
+
+            {activeTab === "overview" && (
             <div className="card-elevated p-4 md:p-6">
                 <div className="flex flex-col md:flex-row gap-3 mb-4">
                     <div className="relative flex-1">
@@ -231,16 +306,34 @@ export default function SalesPage() {
                             ))}
                         </SelectContent>
                     </Select>
-                    <button
-                        onClick={() => setOwingOnly(!owingOnly)}
-                        className={`px-4 h-11 rounded-lg text-sm font-bold transition-colors ${
-                            owingOnly
-                                ? "bg-[#D95D39] text-white"
-                                : "bg-white border border-[#E8E6E1] text-[#5C5C59] hover:text-[#2C423F]"
-                        }`}
-                    >
-                        {owingOnly ? "✓ Owing Only" : "All Customers"}
-                    </button>
+                    <Select value={customerFilter} onValueChange={setCustomerFilter}>
+                        <SelectTrigger className="w-full md:w-[190px] h-11 bg-white border-[#E8E6E1]">
+                            <SelectValue placeholder="All customers" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All customers</SelectItem>
+                            <SelectItem value="cashpay">Cash Pay</SelectItem>
+                            <SelectItem value="registered">Reg users</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Select value={dateFilter} onValueChange={setDateFilter}>
+                        <SelectTrigger className="w-full md:w-[170px] h-11 bg-white border-[#E8E6E1]">
+                            <SelectValue placeholder="Today" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="today">Today</SelectItem>
+                            <SelectItem value="yesterday">Yesterday</SelectItem>
+                            <SelectItem value="custom">Custom</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    {dateFilter === "custom" && (
+                        <Input
+                            type="date"
+                            value={customDate}
+                            onChange={(e) => setCustomDate(e.target.value)}
+                            className="w-full md:w-[170px] h-11 bg-white border-[#E8E6E1]"
+                        />
+                    )}
                     <div className="flex gap-2">
                         <Button
                             type="button"
@@ -276,15 +369,40 @@ export default function SalesPage() {
                         </thead>
                         <tbody>
                             {filtered.map((s) => (
+                                (() => {
+                                    const isVisitor = s.type === "visitor";
+                                    const customerLabel = isVisitor ? "Visitor" : s.customer_name;
+                                    const contractorLabel = isVisitor ? "Cash Pay" : s.contractor;
+                                    return (
                                 <tr key={s.id} className="hover:bg-[#F9F8F6]" data-testid={`sale-row-${s.id}`}>
-                                    <Td className="font-semibold">{s.customer_name}</Td>
-                                    <Td>{s.contractor}</Td>
+                                    <Td className="font-semibold">
+                                        <span
+                                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                isVisitor
+                                                    ? "bg-[#E8F5E9] text-[#2E7D32]"
+                                                    : "bg-[#FDECEC] text-[#B42318]"
+                                            }`}
+                                        >
+                                            {customerLabel}
+                                        </span>
+                                    </Td>
                                     <Td>
                                         <span
                                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                                s.type === "visitor"
-                                                    ? "bg-[#F5E6D3] text-[#8A6E3F]"
-                                                    : "bg-[#EDF1E4] text-[#4F7942]"
+                                                isVisitor
+                                                    ? "bg-[#E8F5E9] text-[#2E7D32]"
+                                                    : "bg-[#FDECEC] text-[#B42318]"
+                                            }`}
+                                        >
+                                            {contractorLabel}
+                                        </span>
+                                    </Td>
+                                    <Td>
+                                        <span
+                                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                isVisitor
+                                                    ? "bg-[#EDF1E4] text-[#4F7942]"
+                                                    : "bg-[#F5E6D3] text-[#8A6E3F]"
                                             }`}
                                         >
                                             {s.food_type}
@@ -302,6 +420,8 @@ export default function SalesPage() {
                                         })}
                                     </Td>
                                 </tr>
+                                    );
+                                })()
                             ))}
                             {filtered.length === 0 && (
                                 <tr>
@@ -315,6 +435,114 @@ export default function SalesPage() {
                     </table>
                 </div>
             </div>
+            )}
+
+            {activeTab === "payment-history" && <PaymentHistoryTab />}
+        </div>
+    );
+}
+
+function PaymentHistoryTab() {
+    const navigate = useNavigate();
+    const [payments, setPayments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [q, setQ] = useState("");
+
+    const fetchPaymentHistory = async () => {
+        setLoading(true);
+        try {
+            const response = await api.get("/payment-history", { params: { limit: 5000 } });
+            const sortedPayments = (response.data || []).sort(
+                (a, b) => new Date(b.created_at) - new Date(a.created_at)
+            );
+            setPayments(sortedPayments);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Failed to load payment history");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchPaymentHistory();
+    }, []);
+
+    const filtered = useMemo(() => {
+        const query = q.trim().toLowerCase();
+        if (!query) return payments;
+        return payments.filter(
+            (p) =>
+                p.customer_name.toLowerCase().includes(query) ||
+                p.contractor.toLowerCase().includes(query) ||
+                (p.initiated_by_name && p.initiated_by_name.toLowerCase().includes(query)),
+        );
+    }, [payments, q]);
+
+    return (
+        <div className="card-elevated p-4 md:p-6">
+            <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5C5C59]" />
+                <Input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search by name or contractor"
+                    className="pl-9 h-11 bg-white border-[#E8E6E1]"
+                />
+            </div>
+
+            {loading ? (
+                <p className="text-center py-10 text-[#5C5C59]">Loading...</p>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr>
+                                <Th>Customer</Th>
+                                <Th>Contractor</Th>
+                                <Th className="text-right">Amount Paid</Th>
+                                <Th>Initiated By</Th>
+                                <Th className="text-right">When</Th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.map((p) => (
+                                <tr
+                                    key={p.$id}
+                                    onClick={() => navigate(`/admin/customers/${p.customer_id}`)}
+                                    className="hover:bg-[#F9F8F6] transition-colors cursor-pointer"
+                                >
+                                    <Td className="font-semibold">{p.customer_name}</Td>
+                                    <Td>{p.contractor}</Td>
+                                    <Td className="text-right font-display font-bold text-[#4F7942]">
+                                        {formatNaira(p.amount)}
+                                    </Td>
+                                    <Td className="text-sm text-[#2C423F]">{p.initiated_by_name}</Td>
+                                    <Td className="text-right text-[#5C5C59] text-sm">
+                                        {new Date(p.created_at).toLocaleString("en-GB", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                            hour12: true,
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                        })}
+                                    </Td>
+                                </tr>
+                            ))}
+                            {filtered.length === 0 && (
+                                <tr>
+                                    <td
+                                        colSpan={5}
+                                        className="text-center py-10 text-[#5C5C59]"
+                                    >
+                                        {q ? "No payments found." : "No payments recorded yet."}
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 }

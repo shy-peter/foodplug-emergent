@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { api, formatNaira } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -46,6 +46,7 @@ import {
 } from "recharts";
 
 export default function DashboardPage() {
+  const location = useLocation();
   const [period, setPeriod] = useState("day");
   const [month, setMonth] = useState(() => {
     const d = new Date();
@@ -53,10 +54,23 @@ export default function DashboardPage() {
   });
   const [stats, setStats] = useState(null);
   const [sales, setSales] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [totalBalance, setTotalBalance] = useState(0);
   const [customerRevenueAfterPayments, setCustomerRevenueAfterPayments] = useState(0);
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [showAllRecentSales, setShowAllRecentSales] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTab = params.get("tab");
+    if (requestedTab === "balance" || requestedTab === "overview") {
+      setActiveTab(requestedTab);
+      return;
+    }
+    setActiveTab("overview");
+  }, [location.search]);
 
   const monthOptions = useMemo(() => {
     const opts = [];
@@ -78,23 +92,31 @@ export default function DashboardPage() {
     try {
       const params = { period };
       if (period === "month") params.month = month;
+      if (locationFilter !== "all") params.location = locationFilter;
 
-      const salesParams = { limit: 10 };
+      const salesParams = { limit: 5000 };
       const range = buildDashboardRange(period, month);
       if (range.start) salesParams.start = range.start;
       if (range.end) salesParams.end = range.end;
+      if (locationFilter !== "all") salesParams.location = locationFilter;
 
-      const [s, l, c] = await Promise.all([
+      const paymentHistoryParams = {};
+      if (locationFilter !== "all") paymentHistoryParams.location = locationFilter;
+
+      const [s, l, paymentHistory, branchResponse] = await Promise.all([
         api.get("/stats", { params }),
         api.get("/sales", { params: salesParams }),
-        api.get("/customers"),
+        api.get("/payment-history", { params: paymentHistoryParams }),
+        api.get("/branches"),
       ]);
       setStats(s.data);
       setSales(l.data);
-      const totalPaid = c.data.reduce(
-        (sum, customer) => sum + (Number(customer.balance_credited) || 0),
-        0
-      );
+      setBranches(branchResponse.data || []);
+      const totalPaid = (paymentHistory.data || []).reduce((sum, payment) => {
+        if (range.start && payment.created_at < range.start) return sum;
+        if (range.end && payment.created_at >= range.end) return sum;
+        return sum + (Number(payment.amount) || 0);
+      }, 0);
       setTotalBalance(totalPaid);
       const totalCustomerRevenue = s.data?.customer_revenue ?? 0;
       const stillOwed = Math.max(0, totalCustomerRevenue - totalPaid);
@@ -108,14 +130,20 @@ export default function DashboardPage() {
 
   const refetchBalanceData = async () => {
     try {
-      const [c, s] = await Promise.all([
-        api.get("/customers"),
-        api.get("/stats", { params: { period } }),
+      const range = buildDashboardRange(period, month);
+      const statsParams = period === "month" ? { period, month } : { period };
+      if (locationFilter !== "all") statsParams.location = locationFilter;
+      const paymentHistoryParams = {};
+      if (locationFilter !== "all") paymentHistoryParams.location = locationFilter;
+      const [paymentHistory, s] = await Promise.all([
+        api.get("/payment-history", { params: paymentHistoryParams }),
+        api.get("/stats", { params: statsParams }),
       ]);
-      const totalPaid = c.data.reduce(
-        (sum, customer) => sum + (Number(customer.balance_credited) || 0),
-        0
-      );
+      const totalPaid = (paymentHistory.data || []).reduce((sum, payment) => {
+        if (range.start && payment.created_at < range.start) return sum;
+        if (range.end && payment.created_at >= range.end) return sum;
+        return sum + (Number(payment.amount) || 0);
+      }, 0);
       setTotalBalance(totalPaid);
       const totalCustomerRevenue = s.data?.customer_revenue ?? 0;
       const stillOwed = Math.max(0, totalCustomerRevenue - totalPaid);
@@ -128,19 +156,23 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, month]);
+  }, [period, month, locationFilter]);
+
+  useEffect(() => {
+    setShowAllRecentSales(false);
+  }, [period, month, locationFilter]);
 
   const chartData = stats?.chart || [];
   const userVsVisitorData = [
     {
       name: "Registered users",
       value: Number(stats?.total_customers || 0),
-      color: "#4F7942",
+      color: "#D95D39",
     },
     {
       name: "Visitor purchases",
       value: Number(stats?.visitor_sales_count || 0),
-      color: "#D95D39",
+      color: "#4F7942",
     },
   ];
   const userVsVisitorTotal = userVsVisitorData.reduce(
@@ -182,6 +214,10 @@ export default function DashboardPage() {
     }),
     { served: 0, salesMade: 0 },
   );
+  const defaultRecentSalesCount = 7;
+  const visibleRecentSales = showAllRecentSales
+    ? sales
+    : sales.slice(0, defaultRecentSalesCount);
 
   return (
     <div className="space-y-8" data-testid="admin-dashboard">
@@ -200,69 +236,82 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1">
-          {[
-            { id: "overview", label: "Overview" },
-            { id: "balance", label: "Balance Payments" },
-            { id: "payment-history", label: "Payment History" },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
-                activeTab === t.id
-                  ? "bg-[#2C423F] text-white"
-                  : "text-[#5C5C59] hover:text-[#2C423F]"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="card-elevated p-2">
+          
+          {isDashboardLoading ? (
+            <div className="flex items-center   text-[#5C5C59]">
+              <div className=" animate-ping rounded-full bg-green-500" />
+              {/* <span className="text-sm font-semibold">Loading...</span> */}
+            </div>
+          ) : (
+            <p className="font-display font-black text-xs text-[#2C423F]">
+              {(stats?.total_customers ?? 0).toLocaleString("en-NG")}
+            </p>
+          )}
         </div>
       </div>
 
       {activeTab === "overview" && (
         <>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1">
-              {[
-                { id: "day", label: "Today" },
-                { id: "yesterday", label: "Yesterday" },
-                { id: "month", label: "Month" },
-                { id: "all", label: "All time" },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setPeriod(p.id)}
-                  data-testid={`period-${p.id}`}
-                  className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
-                    period === p.id
-                      ? "bg-[#2C423F] text-white"
-                      : "text-[#5C5C59] hover:text-[#2C423F]"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1">
+                {[
+                  { id: "day", label: "Today" },
+                  { id: "yesterday", label: "Yesterday" },
+                  { id: "month", label: "Month" },
+                  { id: "all", label: "All time" },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setPeriod(p.id)}
+                    data-testid={`period-${p.id}`}
+                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
+                      period === p.id
+                        ? "bg-[#2C423F] text-white"
+                        : "text-[#5C5C59] hover:text-[#2C423F]"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {period === "month" && (
+                <Select value={month} onValueChange={setMonth}>
+                  <SelectTrigger
+                    data-testid="month-select"
+                    className="w-[200px] h-11 bg-white border-[#E8E6E1]"
+                  >
+                    <SelectValue placeholder="Select month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
-            {period === "month" && (
-              <Select value={month} onValueChange={setMonth}>
-                <SelectTrigger
-                  data-testid="month-select"
-                  className="w-[200px] h-11 bg-white border-[#E8E6E1]"
-                >
-                  <SelectValue placeholder="Select month" />
-                </SelectTrigger>
-                <SelectContent>
-                  {monthOptions.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger className="w-full md:w-[240px] h-11 bg-white border-[#E8E6E1] md:ml-auto">
+                <SelectValue placeholder="All locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All locations</SelectItem>
+                {branches.map((branch) => {
+                  const label = `${branch.branch_name} - ${branch.sub_branch_name}`;
+                  return (
+                    <SelectItem key={branch.id} value={label}>
+                      {label}
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+                  );
+                })}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex items-center justify-center border  px-6 py-2 rounded-lg border-green-200">
@@ -306,8 +355,8 @@ export default function DashboardPage() {
             })()}
             <KpiCard
               testid="kpi-customers"
-              label="Reg customers sales"
-              value={`${formatNaira(-customerRevenueAfterPayments)}`}
+              label=" outstanding Bal"
+              value={`${formatNaira(customerRevenueAfterPayments)}`}
               usercount={stats?.total_customers ?? 0}
               icon={Users}
               accent="#8A9A5B"
@@ -660,7 +709,7 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sales.map((s) => (
+                    {visibleRecentSales.map((s) => (
                       <tr
                         key={s.id}
                         className="hover:bg-[#F9F8F6] transition-colors"
@@ -671,7 +720,7 @@ export default function DashboardPage() {
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                               s.type === "visitor"
-                                ? "bg-[#F5E6D3] text-[#8A6E3F]"
+                                ? "bg-[#F5E6D3] text-[#563f8a]"
                                 : "bg-[#EDF1E4] text-[#4F7942]"
                             }`}
                           >
@@ -697,13 +746,23 @@ export default function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                {sales.length > defaultRecentSalesCount && (
+                  <div className="flex justify-end pt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAllRecentSales((prev) => !prev)}
+                    >
+                      {showAllRecentSales ? "Show less" : "Show more"}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </>
       )}
       {activeTab === "balance" && <BalancePaymentsTab onPaymentSuccess={refetchBalanceData} />}
-      {activeTab === "payment-history" && <PaymentHistoryTab />}
     </div>
   );
 }
@@ -838,9 +897,11 @@ function EmptyChart() {
 
 function BalancePaymentsTab({ onPaymentSuccess }) {
   const [customers, setCustomers] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [salesByCustomer, setSalesByCustomer] = useState({});
   const [q, setQ] = useState("");
   const [balanceFilter, setBalanceFilter] = useState("owing");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [selected, setSelected] = useState(null);
   const [payAmount, setPayAmount] = useState("");
   const [paying, setPaying] = useState(false);
@@ -850,11 +911,13 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
   const fetchData = async () => {
     setLoadingData(true);
     try {
-      const [c, s] = await Promise.all([
+      const [c, s, branchResponse] = await Promise.all([
         api.get("/customers"),
         api.get("/sales", { params: { limit: 5000 } }),
+        api.get("/branches"),
       ]);
       setCustomers(c.data);
+      setBranches(branchResponse.data || []);
       const map = {};
       for (const sale of s.data) {
         if (!sale.customer_id) continue;
@@ -887,6 +950,10 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
       );
     }
 
+    if (locationFilter !== "all") {
+      result = result.filter((c) => String(c.location || "") === locationFilter);
+    }
+
     // Apply balance filter
     if (balanceFilter !== "all") {
       result = result.filter((c) => {
@@ -898,7 +965,7 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
     }
 
     return result;
-  }, [customers, q, balanceFilter, salesByCustomer]);
+  }, [customers, q, locationFilter, balanceFilter, salesByCustomer]);
 
   const getOutstanding = (c) => {
     const totalOwed = salesByCustomer[c.id] || 0;
@@ -907,6 +974,10 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
   };
 
   const openPayment = (customer) => {
+    if (getOutstanding(customer) <= 0) {
+      toast.error("This customer has no outstanding balance");
+      return;
+    }
     setSelected(customer);
     setPayAmount("");
     setDialogOpen(true);
@@ -915,8 +986,21 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
   const handlePay = async (e) => {
     e.preventDefault();
     const amount = Number(payAmount);
+    if (!selected) {
+      toast.error("Select a customer first");
+      return;
+    }
+    const outstanding = getOutstanding(selected);
+    if (outstanding <= 0) {
+      toast.error("This customer has no outstanding balance");
+      return;
+    }
     if (!amount || amount <= 0) {
       toast.error("Enter a valid amount");
+      return;
+    }
+    if (amount > outstanding) {
+      toast.error(`Amount cannot exceed outstanding balance (${formatNaira(outstanding)})`);
       return;
     }
     setPaying(true);
@@ -965,6 +1049,25 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
             placeholder="Search by name or contractor"
             className="pl-9 h-11 bg-white border-[#E8E6E1]"
           />
+        </div>
+
+        <div className="mb-4">
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-full md:w-[240px] h-11 bg-white border-[#E8E6E1]">
+              <SelectValue placeholder="All branches" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All branches</SelectItem>
+              {branches.map((branch) => {
+                const label = `${branch.branch_name} - ${branch.sub_branch_name}`;
+                return (
+                  <SelectItem key={branch.id} value={label}>
+                    {label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="mb-4 inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1">
@@ -1034,10 +1137,10 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
                           size="sm"
                           variant="outline"
                           onClick={() => openPayment(c)}
+                          disabled={outstanding <= 0}
                           className="border-[#D95D39]/30 text-[#D95D39] hover:bg-[#D95D39]/5"
                         >
-                          <MinusCircle className="w-3.5 h-3.5 mr-1" /> Record
-                          Payment
+                          <MinusCircle className="w-3.5 h-3.5 mr-1" /> {outstanding > 0 ? "Record Payment" : "Cleared"}
                         </Button>
                       </Td>
                     </tr>
@@ -1078,6 +1181,7 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
                 id="pay-amount"
                 type="number"
                 min="1"
+                max={selected ? getOutstanding(selected) : undefined}
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
                 placeholder="e.g. 5000"
@@ -1109,121 +1213,3 @@ function BalancePaymentsTab({ onPaymentSuccess }) {
   );
 }
 
-function PaymentHistoryTab() {
-  const navigate = useNavigate();
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
-
-  const fetchPaymentHistory = async () => {
-    setLoading(true);
-    try {
-      const response = await api.get("/payment-history", { params: { limit: 5000 } });
-      const sortedPayments = (response.data || []).sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at)
-      );
-      setPayments(sortedPayments);
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Failed to load payment history");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPaymentHistory();
-  }, []);
-
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    if (!query) return payments;
-    return payments.filter(
-      (p) =>
-        p.customer_name.toLowerCase().includes(query) ||
-        p.contractor.toLowerCase().includes(query) ||
-        (p.initiated_by_name && p.initiated_by_name.toLowerCase().includes(query)),
-    );
-  }, [payments, q]);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-[#5C5C59] font-bold">
-          History
-        </p>
-        <h2 className="font-display font-black text-2xl text-[#2C423F] mt-1">
-          Payment History
-        </h2>
-        <p className="text-[#5C5C59] mt-1">
-          View all customer payments recorded in the system.
-        </p>
-      </div>
-
-      <div className="card-elevated p-4 md:p-6">
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5C5C59]" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by name or contractor"
-            className="pl-9 h-11 bg-white border-[#E8E6E1]"
-          />
-        </div>
-
-        {loading ? (
-          <p className="text-center py-10 text-[#5C5C59]">Loading...</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr>
-                  <Th>Customer</Th>
-                  <Th>Contractor</Th>
-                  <Th className="text-right">Amount Paid</Th>
-                  <Th>Initiated By</Th>
-                  <Th className="text-right">When</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((p) => (
-                  <tr
-                    key={p.$id}
-                    onClick={() => navigate(`/admin/customers/${p.customer_id}`)}
-                    className="hover:bg-[#F9F8F6] transition-colors cursor-pointer"
-                  >
-                    <Td className="font-semibold">{p.customer_name}</Td>
-                    <Td>{p.contractor}</Td>
-                    <Td className="text-right font-display font-bold text-[#4F7942]">
-                      {formatNaira(p.amount)}
-                    </Td>
-                    <Td className="text-sm text-[#2C423F]">{p.initiated_by_name}</Td>
-                    <Td className="text-right text-[#5C5C59] text-sm">
-                      {new Date(p.created_at).toLocaleString("en-GB", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </Td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="text-center py-10 text-[#5C5C59]"
-                    >
-                      {q ? "No payments found." : "No payments recorded yet."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}

@@ -186,9 +186,10 @@ export default function CustomerDetailPage() {
   const exportLabel = activityFilter === "meal" ? "Meal Excel" : activityFilter === "payment" ? "Payment Excel" : "Excel";
 
   const activityTypeLabel = activityFilter === "meal" ? "Meal History" : activityFilter === "payment" ? "Payment History" : "Activity History";
-  const totalSpent = history.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0);
+  const totalBilled = history.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0);
   const paid = paymentHistory.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const outstanding = Math.max(0, totalSpent - paid);
+  const totalSpent = paid;
+  const outstanding = Math.max(0, totalBilled - paid);
 
   if (loading) {
     return (
@@ -313,10 +314,10 @@ export default function CustomerDetailPage() {
             <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Spent</p>
             <p className="text-2xl font-display font-bold text-[#2C423F] mt-1">{formatNaira(totalSpent)}</p>
           </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Amount Paid</p>
-            <p className="text-2xl font-display font-bold text-[#4F7942] mt-1">{formatNaira(paid)}</p>
-          </div>
+          {/* <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Total Billed</p>
+            <p className="text-2xl font-display font-bold text-[#4F7942] mt-1">{formatNaira(totalBilled)}</p>
+          </div> */}
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[#5C5C59] font-bold">Outstanding Balance</p>
             <p className={`text-2xl font-display font-bold mt-1 ${outstanding > 0 ? "text-[#D95D39]" : "text-[#4F7942]"}`}>

@@ -1,17 +1,37 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, UserCog, Receipt, LogOut } from "lucide-react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { LayoutDashboard, Users, UserCog, Receipt, Wallet, MapPin, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const navItems = [
     { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true, testid: "nav-dashboard" },
     { to: "/admin/customers", label: "Customers", icon: Users, testid: "nav-customers" },
     { to: "/admin/agents", label: "Sales Reps", icon: UserCog, testid: "nav-agents" },
-    { to: "/admin/sales", label: "All Sales", icon: Receipt, testid: "nav-sales" },
+    { to: "/admin?tab=balance", label: "Balance Payment", icon: Wallet, testid: "nav-balance" },
+    { to: "/admin/locations", label: "Location/Branch", icon: MapPin, testid: "nav-locations" },
+    { to: "/admin/sales", label: "Transactions", icon: Receipt, testid: "nav-sales" },
 ];
 
 export default function AdminLayout() {
     const { user, logout } = useAuth();
+    const location = useLocation();
     const navigate = useNavigate();
+
+    const isItemActive = (item) => {
+        if (item.to === "/admin?tab=balance") {
+            return location.pathname === "/admin" && new URLSearchParams(location.search).get("tab") === "balance";
+        }
+
+        if (item.to === "/admin") {
+            const tab = new URLSearchParams(location.search).get("tab");
+            return location.pathname === "/admin" && (!tab || tab === "overview");
+        }
+
+        if (item.end) {
+            return location.pathname === item.to;
+        }
+
+        return location.pathname.startsWith(item.to);
+    };
 
     const handleLogout = () => {
         logout();
@@ -39,9 +59,9 @@ export default function AdminLayout() {
                             to={item.to}
                             end={item.end}
                             data-testid={item.testid}
-                            className={({ isActive }) =>
+                            className={() =>
                                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                                    isActive
+                                    isItemActive(item)
                                         ? "bg-[#F9F1EE] text-[#D95D39]"
                                         : "text-[#5C5C59] hover:bg-[#F9F8F6] hover:text-[#2C423F]"
                                 }`
@@ -90,15 +110,15 @@ export default function AdminLayout() {
 
             <main className="flex-1 min-w-0 pt-14 md:pt-0">
                 {/* Mobile bottom nav */}
-                <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-[#E8E6E1] grid grid-cols-4">
+                <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-[#E8E6E1] grid grid-cols-5">
                     {navItems.map((item) => (
                         <NavLink
                             key={item.to}
                             to={item.to}
                             end={item.end}
-                            className={({ isActive }) =>
+                            className={() =>
                                 `flex flex-col items-center justify-center py-2 text-xs font-semibold ${
-                                    isActive ? "text-[#D95D39]" : "text-[#5C5C59]"
+                                    isItemActive(item) ? "text-[#D95D39]" : "text-[#5C5C59]"
                                 }`
                             }
                         >

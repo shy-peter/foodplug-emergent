@@ -5,7 +5,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Copy, User } from "lucide-react";
+import { Search, Plus, Copy, User, MapPin, Download } from "lucide-react";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import {
     Dialog,
     DialogContent,
@@ -19,19 +26,24 @@ import {
 export default function CustomersPage() {
     const navigate = useNavigate();
     const [customers, setCustomers] = useState([]);
+    const [branches, setBranches] = useState([]);
     const [salesByCustomer, setSalesByCustomer] = useState({});
     const [q, setQ] = useState("");
     const [balanceFilter, setBalanceFilter] = useState("all");
+    const [branchFilter, setBranchFilter] = useState("all");
+    const [locationFilter, setLocationFilter] = useState("all");
     const [open, setOpen] = useState(false);
     const [name, setName] = useState("");
     const [contractor, setContractor] = useState("");
+    const [location, setLocation] = useState("");
     const [creating, setCreating] = useState(false);
     const [lastPin, setLastPin] = useState("");
 
     const fetchData = async () => {
         try {
-            const [c, s] = await Promise.all([api.get("/customers"), api.get("/sales", { params: { limit: 5000 } })]);
+            const [c, s, branchesRes] = await Promise.all([api.get("/customers"), api.get("/sales", { params: { limit: 5000 } }), api.get("/branches")]);
             setCustomers(c.data);
+            setBranches(branchesRes.data || []);
             const map = {};
             for (const sale of s.data) {
                 if (!sale.customer_id) continue;
@@ -49,6 +61,30 @@ export default function CustomersPage() {
         fetchData();
     }, []);
 
+    const branchOptions = useMemo(() => {
+        const names = new Set();
+        for (const branch of branches) {
+            if (branch?.branch_name) names.add(String(branch.branch_name));
+        }
+        return Array.from(names).sort((a, b) => a.localeCompare(b));
+    }, [branches]);
+
+    const locationOptions = useMemo(() => {
+        return branches
+            .filter((branch) => {
+                if (branchFilter === "all") return true;
+                return String(branch.branch_name || "") === branchFilter;
+            })
+            .map((branch) => `${branch.branch_name} - ${branch.sub_branch_name}`);
+    }, [branches, branchFilter]);
+
+    useEffect(() => {
+        if (locationFilter === "all") return;
+        if (!locationOptions.includes(locationFilter)) {
+            setLocationFilter("all");
+        }
+    }, [locationFilter, locationOptions]);
+
     const filtered = useMemo(() => {
         const query = q.trim().toLowerCase();
         return customers.filter((c) => {
@@ -57,6 +93,11 @@ export default function CustomersPage() {
                 c.contractor.toLowerCase().includes(query) ||
                 c.pin.includes(query)
             )) return false;
+            if (locationFilter !== "all" && String(c.location || "") !== locationFilter) return false;
+            if (branchFilter !== "all") {
+                const customerBranch = String(c.location || "").split(" - ")[0];
+                if (customerBranch !== branchFilter) return false;
+            }
             if (balanceFilter !== "all") {
                 const s = salesByCustomer[c.id] || { revenue: 0 };
                 const outstanding = Math.max(0, s.revenue - (Number(c.balance_credited) || 0));
@@ -65,21 +106,22 @@ export default function CustomersPage() {
             }
             return true;
         });
-    }, [customers, q, balanceFilter, salesByCustomer]);
+    }, [customers, q, locationFilter, branchFilter, balanceFilter, salesByCustomer]);
 
     const handleCreate = async (e) => {
         e.preventDefault();
-        if (!name.trim() || !contractor.trim()) {
-            toast.error("Please provide name and contractor");
+        if (!name.trim() || !contractor.trim() || !location) {
+            toast.error("Please provide name, contractor and branch");
             return;
         }
         setCreating(true);
         try {
-            const res = await api.post("/customers", { name: name.trim(), contractor: contractor.trim() });
+            const res = await api.post("/customers", { name: name.trim(), contractor: contractor.trim(), location });
             setCustomers((prev) => [res.data, ...prev]);
             setLastPin(res.data.pin);
             setName("");
             setContractor("");
+            setLocation("");
             toast.success(`Created ${res.data.name}. PIN: ${res.data.pin}`);
         } catch (err) {
             toast.error(err?.response?.data?.detail || "Failed to create customer");
@@ -91,6 +133,49 @@ export default function CustomersPage() {
     const copyPin = (pin) => {
         navigator.clipboard?.writeText(pin);
         toast.success(`PIN ${pin} copied`);
+    };
+
+    const escapeCsvValue = (value) => {
+        const text = String(value ?? "");
+        return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const handleExportCustomers = () => {
+        if (!filtered.length) {
+            toast.error("No customers to export");
+            return;
+        }
+
+        const headers = ["Name", "Contractor", "Branch", "PIN", "Meals", "Outstanding Balance"];
+        const rows = filtered.map((customer) => {
+            const summary = salesByCustomer[customer.id] || { meals: 0, revenue: 0 };
+            const paid = Number(customer.balance_credited) || 0;
+            const outstanding = Math.max(0, summary.revenue - paid);
+            return [
+                customer.name,
+                customer.contractor,
+                customer.location || "-",
+                customer.pin,
+                summary.meals,
+                outstanding,
+            ];
+        });
+
+        const csvContent = [headers, ...rows]
+            .map((row) => row.map((cell) => escapeCsvValue(cell)).join(","))
+            .join("\n");
+
+        const blob = new Blob([`\uFEFF${csvContent}`], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const today = new Date().toISOString().slice(0, 10);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `customers-${today}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success(`Exported ${filtered.length} customer records`);
     };
 
     return (
@@ -143,6 +228,24 @@ export default function CustomersPage() {
                                     required
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label>Location / Branch</Label>
+                                <Select value={location} onValueChange={setLocation}>
+                                    <SelectTrigger data-testid="customer-location-input">
+                                        <SelectValue placeholder="Select branch" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {branches.map((branch) => {
+                                            const label = `${branch.branch_name} - ${branch.sub_branch_name}`;
+                                            return (
+                                                <SelectItem key={branch.id} value={label}>
+                                                    {label}
+                                                </SelectItem>
+                                            );
+                                        })}
+                                    </SelectContent>
+                                </Select>
+                            </div>
                             {lastPin && (
                                 <div className="bg-[#F9F1EE] border border-[#D95D39]/20 rounded-lg p-3 flex items-center justify-between">
                                     <div>
@@ -174,6 +277,34 @@ export default function CustomersPage() {
                 </Dialog>
             </div>
 
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <Select value={branchFilter} onValueChange={setBranchFilter}>
+                    <SelectTrigger className="w-full sm:w-[260px] h-11 bg-white border-[#E8E6E1]">
+                        <SelectValue placeholder="All branches" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All branches</SelectItem>
+                        {branchOptions.map((branchName) => {
+                            return (
+                                <SelectItem key={branchName} value={branchName}>
+                                    {branchName}
+                                </SelectItem>
+                            );
+                        })}
+                    </SelectContent>
+                </Select>
+
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleExportCustomers}
+                    className="h-11 border-[#E8E6E1]"
+                    data-testid="export-customers-button"
+                >
+                    <Download className="w-4 h-4 mr-2" /> Export to Excel
+                </Button>
+            </div>
+
             <div className="card-elevated p-4 md:p-6">
                 <div className="flex flex-col sm:flex-row gap-3 mb-4">
                     <div className="relative flex-1">
@@ -186,6 +317,19 @@ export default function CustomersPage() {
                             className="pl-9 h-11 bg-white border-[#E8E6E1]"
                         />
                     </div>
+                    <Select value={locationFilter} onValueChange={setLocationFilter}>
+                        <SelectTrigger className="w-full sm:w-[240px] h-11 bg-white border-[#E8E6E1]">
+                            <SelectValue placeholder="All locations" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All locations</SelectItem>
+                            {locationOptions.map((label) => (
+                                <SelectItem key={label} value={label}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     <div className="inline-flex rounded-lg bg-white border border-[#E8E6E1] p-1 shrink-0">
                         {[
                             { id: "all", label: "All" },
@@ -217,6 +361,7 @@ export default function CustomersPage() {
                             <tr>
                                 <Th>Name</Th>
                                 <Th>Contractor</Th>
+                                <Th>Branch</Th>
                                 <Th>PIN</Th>
                                 <Th className="text-right">Meals</Th>
                                 <Th className="text-right">Balance</Th>
@@ -244,6 +389,11 @@ export default function CustomersPage() {
                                         </Td>
                                         <Td>{c.contractor}</Td>
                                         <Td>
+                                            <span className="inline-flex items-center gap-2 text-[#5C5C59]">
+                                                <MapPin className="w-4 h-4" /> {c.location || "-"}
+                                            </span>
+                                        </Td>
+                                        <Td>
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -266,7 +416,7 @@ export default function CustomersPage() {
                             })}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={5} className="text-center py-10 text-[#5C5C59]">
+                                    <td colSpan={6} className="text-center py-10 text-[#5C5C59]">
                                         No customers match your search.
                                     </td>
                                 </tr>

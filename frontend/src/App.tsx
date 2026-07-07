@@ -7,6 +7,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import CustomersPage from "@/pages/CustomersPage";
 import CustomerDetailPage from "@/pages/CustomerDetailPage";
 import AgentsPage from "@/pages/AgentsPage";
+import LocationsPage from "@/pages/LocationsPage";
 import SalesPage from "@/pages/SalesPage";
 import SalesAgentPage from "@/pages/SalesAgentPage";
 import AdminLayout from "@/components/AdminLayout";
@@ -107,6 +108,7 @@ function App() {
               <Route path="customers" element={<CustomersPage />} />
               <Route path="customers/:customerId" element={<CustomerDetailPage />} />
               <Route path="agents" element={<AgentsPage />} />
+              <Route path="locations" element={<LocationsPage />} />
               <Route path="sales" element={<SalesPage />} />
             </Route>
             <Route

@@ -105,7 +105,7 @@ export default function SalesAgentPage() {
 
       setSelected({
         id: VISITOR_PROFILE_ID,
-        name: "Unregistered users",
+        name: "Visitor",
         contractor: "Visitor profile",
         pin: "-",
       });

@@ -11,6 +11,7 @@ const USERS_COLLECTION_ID = import.meta.env.VITE_APPWRITE_USERS_COLLECTION_ID ||
 const CUSTOMERS_COLLECTION_ID = import.meta.env.VITE_APPWRITE_CUSTOMERS_COLLECTION_ID || "customers";
 const SALES_COLLECTION_ID = import.meta.env.VITE_APPWRITE_SALES_COLLECTION_ID || "sales";
 const PAYMENT_HISTORY_COLLECTION_ID = import.meta.env.VITE_APPWRITE_PAYMENT_HISTORY_COLLECTION_ID || "payment_history";
+const BRANCHES_COLLECTION_ID = import.meta.env.VITE_APPWRITE_BRANCHES_COLLECTION_ID || "branches";
 
 export const TOKEN_KEY = "foodplug_token";
 export const USER_KEY = "foodplug_user";
@@ -25,6 +26,7 @@ export type SessionUser = {
   role: UserRole;
   display_name: string;
   contact?: string;
+  location?: string;
 };
 
 type UserDoc = Models.Document & SessionUser & { organization_id: string; created_at: string };
@@ -49,9 +51,17 @@ type CustomerDoc = Models.Document & {
   organization_id: string;
   name: string;
   contractor: string;
+  location?: string;
   pin: string;
   created_at: string;
   balance_credited?: number;
+};
+type BranchDoc = Models.Document & {
+  id: string;
+  organization_id: string;
+  branch_name: string;
+  sub_branch_name: string;
+  created_at: string;
 };
 type SaleDoc = Models.Document & {
   id: string;
@@ -64,6 +74,7 @@ type SaleDoc = Models.Document & {
   amount: number;
   agent_id: string;
   agent_name: string;
+  location?: string;
   created_at: string;
 };
 
@@ -78,6 +89,7 @@ type SaleData = {
   amount: number;
   agent_id: string;
   agent_name: string;
+  location?: string;
   created_at: string;
 };
 
@@ -144,6 +156,7 @@ function toSessionUser(user: UserDoc): SessionUser {
     role: user.role,
     display_name: user.display_name,
     contact: user.contact || "",
+    location: user.location || "",
   };
 }
 
@@ -430,6 +443,7 @@ function normalizeDetail(error: unknown) {
         [USERS_COLLECTION_ID]: "VITE_APPWRITE_USERS_COLLECTION_ID",
         [CUSTOMERS_COLLECTION_ID]: "VITE_APPWRITE_CUSTOMERS_COLLECTION_ID",
         [SALES_COLLECTION_ID]: "VITE_APPWRITE_SALES_COLLECTION_ID",
+        [BRANCHES_COLLECTION_ID]: "VITE_APPWRITE_BRANCHES_COLLECTION_ID",
       };
       const envName = collectionId ? envById[collectionId] : undefined;
       if (envName && collectionId) {
@@ -506,6 +520,14 @@ async function handleGet(path: string, options?: GetOptions) {
     return customers;
   }
 
+  if (path === "/branches") {
+    const branches = await listAll<BranchDoc>(BRANCHES_COLLECTION_ID, [
+      Query.equal("organization_id", organizationId),
+      Query.orderDesc("created_at"),
+    ]);
+    return branches;
+  }
+
   const customerPath = parseCustomerId(path);
   if (customerPath?.type === "history") {
     const customer = (
@@ -540,6 +562,7 @@ async function handleGet(path: string, options?: GetOptions) {
     const limit = hasExplicitLimit ? Number(params.limit) : null;
     const customerId = (params.customer_id as string | undefined) || "";
     const agentId = (params.agent_id as string | undefined) || "";
+    const location = (params.location as string | undefined) || "";
     const start = (params.start as string | undefined) || "";
     const end = (params.end as string | undefined) || "";
 
@@ -547,10 +570,26 @@ async function handleGet(path: string, options?: GetOptions) {
       Query.equal("organization_id", organizationId),
       Query.orderDesc("created_at"),
     ]);
+    const [customers, agents] = location
+      ? await Promise.all([
+          listAll<CustomerDoc>(CUSTOMERS_COLLECTION_ID, [Query.equal("organization_id", organizationId)]),
+          listAll<UserDoc>(USERS_COLLECTION_ID, [Query.equal("organization_id", organizationId)]),
+        ])
+      : [[], []];
+    const customerLocationById = new Map(customers.map((customer) => [customer.id, String(customer.location || "")]));
+    const agentLocationById = new Map(agents.map((agent) => [agent.id, String(agent.location || "")]));
     const filteredSales = sales
       .filter((sale) => {
         if (customerId && sale.customer_id !== customerId) return false;
         if (agentId && sale.agent_id !== agentId) return false;
+        if (location) {
+          const resolvedLocation = String(
+            sale.location
+            || (sale.type === "customer" ? customerLocationById.get(String(sale.customer_id || "")) : agentLocationById.get(String(sale.agent_id || "")))
+            || "",
+          );
+          if (resolvedLocation !== location) return false;
+        }
         if (start && sale.created_at < start) return false;
         if (end && sale.created_at >= end) return false;
         return true;
@@ -565,20 +604,35 @@ async function handleGet(path: string, options?: GetOptions) {
 
   if (path === "/payment-history") {
     const params = options?.params || {};
-    const limit = Number(params.limit || 500);
+    const hasExplicitLimit =
+      params.limit !== undefined &&
+      params.limit !== null &&
+      String(params.limit).trim() !== "";
+    const limit = hasExplicitLimit ? Number(params.limit) : null;
     const customerId = (params.customer_id as string | undefined) || "";
+    const location = (params.location as string | undefined) || "";
 
     const queries = [
       Query.equal("organization_id", organizationId),
       Query.orderDesc("created_at"),
-      Query.limit(limit),
     ];
+
+    if (hasExplicitLimit && Number.isFinite(limit) && Number(limit) > 0) {
+      queries.push(Query.limit(Number(limit)));
+    }
 
     if (customerId) {
       queries.splice(1, 0, Query.equal("customer_id", customerId));
     }
 
-    return await listAll<Record<string, unknown>>(PAYMENT_HISTORY_COLLECTION_ID, queries);
+    const payments = await listAll<Record<string, unknown>>(PAYMENT_HISTORY_COLLECTION_ID, queries);
+    if (!location) {
+      return payments;
+    }
+
+    const customers = await listAll<CustomerDoc>(CUSTOMERS_COLLECTION_ID, [Query.equal("organization_id", organizationId)]);
+    const customerLocationById = new Map(customers.map((customer) => [customer.id, String(customer.location || "")]));
+    return payments.filter((payment) => customerLocationById.get(String(payment.customer_id || "")) === location);
   }
 
   if (path === "/agents") {
@@ -597,6 +651,7 @@ async function handleGet(path: string, options?: GetOptions) {
     const params = options?.params || {};
     const period = ((params.period as string) || "day") as "day" | "yesterday" | "month" | "all";
     const month = (params.month as string | undefined) || undefined;
+    const location = (params.location as string | undefined) || "";
 
     const sales = await listAll<SaleDoc>(SALES_COLLECTION_ID, [Query.equal("organization_id", organizationId)]);
     const customers = await listAll<CustomerDoc>(CUSTOMERS_COLLECTION_ID, [Query.equal("organization_id", organizationId)]);
@@ -632,7 +687,20 @@ async function handleGet(path: string, options?: GetOptions) {
       end = monthEnd.toISOString();
     }
 
-    const scopedSales = sales.filter((sale) => {
+    const customerLocationById = new Map(customers.map((customer) => [customer.id, String(customer.location || "")]));
+    const agentLocationById = new Map(agents.map((agent) => [agent.id, String(agent.location || "")]));
+
+    const locationScopedSales = sales.filter((sale) => {
+      if (!location) return true;
+      const resolvedLocation = String(
+        sale.location
+        || (sale.type === "customer" ? customerLocationById.get(String(sale.customer_id || "")) : agentLocationById.get(String(sale.agent_id || "")))
+        || "",
+      );
+      return resolvedLocation === location;
+    });
+
+    const scopedSales = locationScopedSales.filter((sale) => {
       if (start && sale.created_at < start) return false;
       if (end && sale.created_at >= end) return false;
       return true;
@@ -676,9 +744,13 @@ async function handleGet(path: string, options?: GetOptions) {
       byCustomer[sale.customer_id].revenue += Math.abs(Number(sale.amount || 0));
     }
 
+    const filteredCustomers = location ? customers.filter((customer) => String(customer.location || "") === location) : customers;
+    const filteredAgents = location ? agents.filter((agent) => String(agent.location || "") === location) : agents;
+
     return {
       period,
       month,
+      location,
       range: { start, end },
       total_revenue: totalRevenue,
       total_sales: scopedSales.length,
@@ -686,9 +758,9 @@ async function handleGet(path: string, options?: GetOptions) {
       visitor_revenue: visitorSales.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0),
       customer_sales_count: customerSales.length,
       visitor_sales_count: visitorSales.length,
-      total_customers: customers.length,
+      total_customers: filteredCustomers.length,
       total_visitors: visitorsServed,
-      total_agents: agents.length,
+      total_agents: filteredAgents.length,
       unique_customers_served: customersServed,
       customers_served: customersServed,
       visitors_served: visitorsServed,
@@ -820,8 +892,9 @@ async function handlePost(path: string, body?: Record<string, unknown>) {
 
     const name = String(body?.name || "").trim();
     const contractor = String(body?.contractor || "").trim();
-    if (!name || !contractor) {
-      throw createApiError("Name and contractor are required", 400);
+    const location = String(body?.location || "").trim();
+    if (!name || !contractor || !location) {
+      throw createApiError("Name, contractor and branch are required", 400);
     }
 
     const pin = await ensureUniquePin();
@@ -830,6 +903,7 @@ async function handlePost(path: string, body?: Record<string, unknown>) {
       organization_id: organizationId,
       name,
       contractor,
+      location,
       pin,
       created_at: nowIso(),
     };
@@ -846,10 +920,11 @@ async function handlePost(path: string, body?: Record<string, unknown>) {
     const displayName = String(body?.display_name || "").trim();
     const email = String(body?.email || "").trim().toLowerCase();
     const contact = String(body?.contact || "").trim();
+    const location = String(body?.location || "").trim();
     const password = String(body?.password || "");
 
-    if (!displayName || !email || password.length < 6) {
-      throw createApiError("Name, email and password (min 6 chars) are required", 400);
+    if (!displayName || !email || !location || password.length < 6) {
+      throw createApiError("Name, email, location and password (min 6 chars) are required", 400);
     }
 
     const existing = await listAll<UserDoc>(USERS_COLLECTION_ID, [
@@ -868,6 +943,7 @@ async function handlePost(path: string, body?: Record<string, unknown>) {
       role: "sales" as const,
       display_name: displayName,
       contact,
+      location,
       created_at: nowIso(),
     };
 
@@ -880,7 +956,32 @@ async function handlePost(path: string, body?: Record<string, unknown>) {
       role: payload.role,
       display_name: payload.display_name,
       contact: payload.contact,
+      location: payload.location,
     };
+  }
+
+  if (path === "/branches") {
+    const actor = getCurrentUserOrThrow();
+    const organizationId = getTenantOrganizationId();
+    requireAdmin(actor);
+
+    const branchName = String(body?.branch_name || "").trim();
+    const subBranchName = String(body?.sub_branch_name || "").trim();
+
+    if (!branchName || !subBranchName) {
+      throw createApiError("Branch name and sub branch name are required", 400);
+    }
+
+    const payload = {
+      id: ID.unique(),
+      organization_id: organizationId,
+      branch_name: branchName,
+      sub_branch_name: subBranchName,
+      created_at: nowIso(),
+    };
+
+    await db.createDocument(DATABASE_ID as string, BRANCHES_COLLECTION_ID, ID.unique(), payload);
+    return payload;
   }
 
   if (path === "/sales") {
@@ -1164,7 +1265,26 @@ export const api = {
           throw createApiError("amount must be a positive number", 400);
         }
 
-        const newCredited = Number(customer.balance_credited || 0) + amount;
+        const customerSales = await listAll<SaleDoc>(SALES_COLLECTION_ID, [
+          Query.equal("organization_id", organizationId),
+          Query.equal("customer_id", customerId),
+        ]);
+        const totalOwed = customerSales.reduce((sum, sale) => sum + Math.abs(Number(sale.amount || 0)), 0);
+        const alreadyCredited = Number(customer.balance_credited || 0);
+        const outstanding = Math.max(0, totalOwed - alreadyCredited);
+
+        if (outstanding <= 0) {
+          throw createApiError("This customer has no outstanding balance", 400);
+        }
+
+        if (amount > outstanding) {
+          throw createApiError(
+            `Amount exceeds outstanding balance. Remaining balance is ${formatNaira(outstanding)}`,
+            400,
+          );
+        }
+
+        const newCredited = alreadyCredited + amount;
         await db.updateDocument(DATABASE_ID as string, CUSTOMERS_COLLECTION_ID, customer.$id, {
           balance_credited: newCredited,
         });

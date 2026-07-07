@@ -4,7 +4,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, UserCog, Mail, Phone } from "lucide-react";
+import { Plus, Trash2, UserCog, Mail, Phone, MapPin } from "lucide-react";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import {
     Dialog,
     DialogContent,
@@ -17,15 +24,17 @@ import {
 
 export default function AgentsPage() {
     const [agents, setAgents] = useState([]);
+    const [branches, setBranches] = useState([]);
     const [open, setOpen] = useState(false);
-    const [form, setForm] = useState({ display_name: "", email: "", contact: "", password: "", confirm_password: "" });
+    const [form, setForm] = useState({ display_name: "", email: "", contact: "", location: "", password: "", confirm_password: "" });
     const [creating, setCreating] = useState(false);
     const passwordMismatch = Boolean(form.confirm_password) && form.password !== form.confirm_password;
 
     const fetchAgents = async () => {
         try {
-            const res = await api.get("/agents");
-            setAgents(res.data);
+            const [agentsRes, branchesRes] = await Promise.all([api.get("/agents"), api.get("/branches")]);
+            setAgents(agentsRes.data);
+            setBranches(branchesRes.data || []);
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Failed to load sales reps");
         }
@@ -37,8 +46,8 @@ export default function AgentsPage() {
 
     const handleCreate = async (e) => {
         e.preventDefault();
-        if (!form.display_name || !form.email || !form.password) {
-            toast.error("Name, email, and password are required");
+        if (!form.display_name || !form.email || !form.location || !form.password) {
+            toast.error("Name, email, location, and password are required");
             return;
         }
         if (form.password.length < 6) {
@@ -55,7 +64,7 @@ export default function AgentsPage() {
         try {
             const res = await api.post("/agents", payload);
             setAgents((prev) => [res.data, ...prev]);
-            setForm({ display_name: "", email: "", contact: "", password: "", confirm_password: "" });
+            setForm({ display_name: "", email: "", contact: "", location: "", password: "", confirm_password: "" });
             setOpen(false);
             toast.success(`Registered ${res.data.display_name}`);
         } catch (err) {
@@ -139,6 +148,24 @@ export default function AgentsPage() {
                                 />
                             </div>
                             <div className="space-y-2">
+                                <Label>Location / Branch</Label>
+                                <Select value={form.location} onValueChange={(value) => setForm({ ...form, location: value })}>
+                                    <SelectTrigger data-testid="agent-location-input">
+                                        <SelectValue placeholder="Select branch" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {branches.map((branch) => {
+                                            const label = `${branch.branch_name} - ${branch.sub_branch_name}`;
+                                            return (
+                                                <SelectItem key={branch.id} value={label}>
+                                                    {label}
+                                                </SelectItem>
+                                            );
+                                        })}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
                                 <Label>Temporary password</Label>
                                 <Input
                                     type="password"
@@ -189,6 +216,11 @@ export default function AgentsPage() {
                                     <p className="text-xs uppercase tracking-widest text-[#5C5C59] mt-0.5">
                                         Sales rep
                                     </p>
+                                    {a.location && (
+                                        <p className="text-xs text-[#5C5C59] mt-1 inline-flex items-center gap-1">
+                                            <MapPin className="w-3.5 h-3.5" /> {a.location}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                             <button
@@ -206,6 +238,11 @@ export default function AgentsPage() {
                             {a.contact && (
                                 <p className="flex items-center gap-2">
                                     <Phone className="w-4 h-4" /> {a.contact}
+                                </p>
+                            )}
+                            {a.location && (
+                                <p className="flex items-center gap-2">
+                                    <MapPin className="w-4 h-4" /> {a.location}
                                 </p>
                             )}
                         </div>
