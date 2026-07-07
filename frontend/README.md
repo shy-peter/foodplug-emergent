@@ -1,6 +1,14 @@
-# Getting Started with Create React App
+# Frontend (Vite + React)
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This app uses React Router with browser history mode. In production, direct refresh on nested routes (for example `/admin/customers`) must be rewritten to `index.html`.
+
+SPA fallback files included in this folder:
+
+- `vercel.json` for Vercel rewrites.
+- `public/_redirects` for Netlify-style static redirects.
+- `netlify.toml` for Netlify redirect config.
+
+If you deploy to another platform (Nginx, Apache, S3/CloudFront, etc.), add an equivalent catch-all rewrite to `index.html`.
 
 ## Available Scripts
 
