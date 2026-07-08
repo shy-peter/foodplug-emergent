@@ -365,16 +365,23 @@ export default function SalesAgentPage() {
               <p className="font-display font-black text-[#2C423F] leading-none">
                 FoodPlug POS
               </p>
-              <p className="text-xs text-[#5C5C59]">
+             <p className="text-xs text-[#5C5C59]">
                 {user?.display_name || "Sales rep"}
-                {(user?.organization_name || user?.organization_id) && (
+                {user?.location ? (
+                  <>
+                    {" - "}
+                    <span className="font-mono italic text-[#D95D39]">
+                      {user.location}
+                    </span>
+                  </>
+                ) : (user?.organization_name || user?.organization_id) ? (
                   <>
                     {" - "}
                     <span className="font-mono italic text-[#D95D39]">
                       {user?.organization_name || user?.organization_id}
                     </span>
                   </>
-                )}
+                ) : null}
               </p>
             </div>
           </div>
