@@ -134,7 +134,7 @@ export default function HomeScreen() {
       <View style={styles.backdropTwo} />
 
       <View style={styles.heroCard}>
-        <View style={styles.heroTopRow}>
+        {/* <View style={styles.heroTopRow}>
           <View>
             <Text style={styles.eyebrow}>Dashboard</Text>
             <Text style={styles.title}>Welcome, {user?.display_name || 'team member'}</Text>
@@ -148,7 +148,7 @@ export default function HomeScreen() {
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarInitial}>{(user?.display_name || 'F')[0].toUpperCase()}</Text>
           </View>
-        </View>
+        </View> */}
 
         <View style={styles.metaRow}>
           <MetaItem label="Role" value={capitalize(user?.role || 'sales')} />

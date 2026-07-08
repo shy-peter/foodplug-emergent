@@ -298,10 +298,10 @@ export default function DashboardPage() {
 
             <Select value={locationFilter} onValueChange={setLocationFilter}>
               <SelectTrigger className="w-full md:w-[240px] h-11 bg-white border-[#E8E6E1] md:ml-auto">
-                <SelectValue placeholder="All locations" />
+                <SelectValue placeholder="All Branches" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All locations</SelectItem>
+                <SelectItem value="all">All Branches</SelectItem>
                 {branches.map((branch) => {
                   const label = `${branch.branch_name} - ${branch.sub_branch_name}`;
                   return (

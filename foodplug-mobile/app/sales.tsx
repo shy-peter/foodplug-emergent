@@ -35,7 +35,7 @@ type SelectedProfile =
 
 const VISITOR_PROFILE: SelectedProfile = {
   id: "__visitors__",
-  name: "Unregistered users",
+  name: "Visitor",
   contractor: "Visitor profile",
   pin: "-",
 };
